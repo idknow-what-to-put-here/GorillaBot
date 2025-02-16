@@ -1,0 +1,241 @@
+﻿using GorillaLocomotion;
+using UnityEngine;
+using UnityEngine.InputSystem;
+using WalkSimulator.Rigging;
+using WalkSimulator.Tools;
+
+namespace WalkSimulator.Animators
+{
+    public class WalkAnimator : AnimatorBase
+    {
+        [SerializeField] public float speed = 4f;
+        [SerializeField] private float height = 0.4f;
+        [SerializeField] private float raycastDistanceMultiplier = 0.5f;
+
+        private float targetHeight;
+        private bool hasJumped;
+        private bool onJumpCooldown;
+        private float jumpTime;
+        private float walkCycleTime = 0f;
+
+        public override void Animate()
+        {
+            MoveBody();
+            AnimateHands();
+        }
+
+        private void Update()
+        {
+            if (!Plugin.Instance.Enabled)
+            {
+                return;
+            }
+
+            if (!hasJumped && rig.onGround && Keyboard.current.spaceKey.wasPressedThisFrame)
+            {
+                JumpMain();
+            }
+
+            if ((hasJumped && !rig.onGround) || Time.time - jumpTime > 1f)
+            {
+                onJumpCooldown = false;
+            }
+
+            if (rig.onGround && !onJumpCooldown)
+            {
+                hasJumped = false;
+            }
+        }
+
+        public void JumpMain()
+        {
+            hasJumped = true;
+            onJumpCooldown = true;
+            jumpTime = Time.time;
+            rig.active = false;
+            rigidbody.AddForce(Vector3.up * 235f * Player.Instance.scale, ForceMode.Impulse);
+        }
+        public void JumpPath(float requiredHeight)
+        {
+            hasJumped = true;
+            onJumpCooldown = true;
+            jumpTime = Time.time;
+            rig.active = false;
+
+            float gravity = Mathf.Abs(Physics.gravity.y);
+            float jumpVelocity = Mathf.Sqrt(2 * gravity * requiredHeight);
+
+            rigidbody.AddForce(Vector3.up * jumpVelocity * Player.Instance.scale, ForceMode.Impulse);
+        }
+        public void MoveBody()
+        {
+            rig.active = rig.onGround && !hasJumped;
+            rig.useGravity = !rig.onGround;
+
+            if (!rig.onGround)
+            {
+                return;
+            }
+
+            float crouchMultiplier = Keyboard.current.ctrlKey.isPressed ? 0.6f : 1f;
+            float minHeight = 0.5f * crouchMultiplier;
+            float maxHeight = 0.55f * crouchMultiplier;
+
+            float cycleSpeed = NotMoving ? 2f * Mathf.PI : walkCycleTime * 2f * Mathf.PI;
+            float heightOffset = Extensions.Map(Mathf.Sin(cycleSpeed), -1f, 1f, minHeight, maxHeight);
+
+            targetHeight = heightOffset;
+            Vector3 targetPosition = rig.lastGroundPosition + Vector3.up * targetHeight * Player.Instance.scale;
+
+            Vector3 movementDirection = body.TransformDirection(InputHandler.inputDirectionNoY);
+            movementDirection.y = 0f;
+
+            if (Vector3.Dot(rig.lastNormal, Vector3.up) > 0.3f)
+            {
+                movementDirection = Vector3.ProjectOnPlane(movementDirection, rig.lastNormal);
+            }
+
+            movementDirection *= Player.Instance.scale;
+            float currentSpeed = IsSprinting ? (speed * 3f) : speed;
+            targetPosition += movementDirection * currentSpeed / 10f;
+
+            rig.targetPosition = targetPosition;
+        }
+
+        private void AnimateHands()
+        {
+            leftHand.lookAt = leftHand.targetPosition + body.forward;
+            rightHand.lookAt = rightHand.targetPosition + body.forward;
+
+            leftHand.up = body.right;
+            rightHand.up = -body.right;
+
+            if (!rig.onGround)
+            {
+                AnimateHandsInAir();
+            }
+            else
+            {
+                AnimateHandsOnGround();
+            }
+        }
+
+        private void AnimateHandsInAir()
+        {
+            leftHand.grounded = false;
+            rightHand.grounded = false;
+            Vector3 handOffset = Vector3.up * 0.2f * Player.Instance.scale;
+            leftHand.targetPosition = leftHand.DefaultPosition;
+            rightHand.targetPosition = rightHand.DefaultPosition + handOffset;
+        }
+
+        private void AnimateHandsOnGround()
+        {
+            UpdateHitInfo(leftHand);
+            UpdateHitInfo(rightHand);
+
+            if (NotMoving)
+            {
+                leftHand.targetPosition = leftHand.hit;
+                rightHand.targetPosition = rightHand.hit;
+            }
+            else
+            {
+                if (!leftHand.grounded && !rightHand.grounded)
+                {
+                    leftHand.grounded = true;
+                    leftHand.lastSnap = leftHand.hit;
+                    leftHand.targetPosition = leftHand.hit;
+                    rightHand.lastSnap = rightHand.hit;
+                    rightHand.targetPosition = rightHand.hit;
+                }
+                AnimateHand(leftHand, rightHand);
+                AnimateHand(rightHand, leftHand);
+            }
+        }
+
+        private void UpdateHitInfo(HandDriver hand)
+        {
+            float scale = Player.Instance.scale;
+            float raycastDistance = raycastDistanceMultiplier * scale;
+            Vector3 smoothedGroundPosition = rig.smoothedGroundPosition;
+            Vector3 groundNormal = rig.lastNormal;
+
+            float forwardInfluence = Mathf.Abs(Vector3.Dot(InputHandler.inputDirectionNoY, Vector3.forward));
+            float handOffsetInfluence = Extensions.Map(forwardInfluence, 0f, 1f, 0.4f, 0.5f);
+
+            Vector3 handOffsetDirection = body.TransformDirection(InputHandler.inputDirectionNoY * handOffsetInfluence);
+            handOffsetDirection.y = 0f;
+            handOffsetDirection *= scale;
+
+            Vector3 raycastStartPoint = Vector3.ProjectOnPlane(hand.DefaultPosition - smoothedGroundPosition + handOffsetDirection, groundNormal);
+            raycastStartPoint += smoothedGroundPosition + groundNormal * 0.3f * scale;
+
+            if (!Physics.Raycast(raycastStartPoint, -groundNormal, out RaycastHit hitInfo, raycastDistance, Player.Instance.locomotionEnabledLayers))
+            {
+                if (NotMoving)
+                {
+                    hand.targetPosition = hand.DefaultPosition;
+                }
+            }
+            else
+            {
+                hand.hit = hitInfo.point;
+                hand.normal = hitInfo.normal;
+                hand.lookAt = hand.transform.position + body.forward;
+            }
+        }
+
+        private void AnimateHand(HandDriver hand, HandDriver otherHand)
+        {
+            float forwardInfluence = Mathf.Abs(Vector3.Dot(InputHandler.inputDirectionNoY, Vector3.forward));
+            float verticalInfluence = Vector3.Dot(rig.lastNormal, Vector3.up);
+            float stepHeightInfluence = Extensions.Map(verticalInfluence, 0f, 1f, 0.1f, 0.6f);
+            float stepLengthInfluence = Extensions.Map(forwardInfluence, 0f, 1f, 0.5f, 1.25f);
+
+            stepLengthInfluence *= stepHeightInfluence * Player.Instance.scale;
+            float stepHeight = 0.2f * Player.Instance.scale;
+
+            float distanceSinceLastStep = otherHand.hit.Distance(otherHand.lastSnap) / stepLengthInfluence;
+
+            if (otherHand.grounded && distanceSinceLastStep >= 1f)
+            {
+                hand.targetPosition = hand.hit;
+                hand.lastSnap = hand.hit;
+                hand.grounded = true;
+                otherHand.grounded = false;
+            }
+            else
+            {
+                if (otherHand.grounded)
+                {
+                    walkCycleTime = distanceSinceLastStep;
+                    hand.targetPosition = Vector3.Slerp(hand.lastSnap, hand.hit, walkCycleTime);
+                    hand.targetPosition += hand.normal * stepHeight * Mathf.Sin(walkCycleTime);
+                    hand.grounded = false;
+                }
+            }
+
+            if (hand.targetPosition.Distance(hand.DefaultPosition) > 1f)
+            {
+                hand.targetPosition = hand.DefaultPosition;
+            }
+        }
+
+        public override void Setup()
+        {
+            HeadDriver.Instance.LockCursor = true;
+            HeadDriver.Instance.turn = true;
+        }
+
+        private bool IsSprinting
+        {
+            get { return Keyboard.current.leftShiftKey.isPressed; }
+        }
+
+        private bool NotMoving
+        {
+            get { return InputHandler.inputDirectionNoY == Vector3.zero; }
+        }
+    }
+}
