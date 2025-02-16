@@ -9,8 +9,8 @@ this a gorilla tag bot
 
 ## ToDo
 
-making it avoid the objects in its way
-making the pathfinding not look like a bot
+- making it avoid the objects in its way
+- making the pathfinding not look like a bot
 
 ## Credits & Licensing
 
