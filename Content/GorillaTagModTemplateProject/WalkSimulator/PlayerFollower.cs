@@ -10,6 +10,8 @@ using GorillaTagScripts;
 using System.Collections;
 using System.Linq;
 using UnityEngine.SceneManagement;
+using System;
+using static WalkSimulator.PlayerFollowerGUI;
 
 namespace WalkSimulator
 {
@@ -50,13 +52,12 @@ namespace WalkSimulator
         public Player taggedPlayer;
 
         // Hand Grounding
-        public float handGroundingDuration = 2.0f;
+        public HandButton selectedHandButton = HandButton.Grip;
+        public GroundingActivationPoint activationPoint = GroundingActivationPoint.OnReachGround;
         public float handDownDuration = 0.5f;
-        public float gripHoldDuration = 1.0f;
+        public float buttonHoldDuration = 1.0f;
         public float handUpDuration = 0.5f;
         public float handGroundDistance = 0.5f;
-        public float gripStrength = 1.0f;
-        public float handMoveSpeed = 1.0f;
 
         // Object Scanning
         public List<GameObject> activeObjects = new List<GameObject>();
@@ -574,6 +575,87 @@ namespace WalkSimulator
             TurnTowardsTargetPosition(localBody, currentWaypoint);
         }
         #endregion
+        #region Hand
+        public void PerformHandGrounding(bool isLeftHand)
+        {
+            StartCoroutine(HandGroundingRoutine(isLeftHand));
+        }
+        private IEnumerator HandGroundingRoutine(bool isLeftHand)
+        {
+            HandDriver hand = isLeftHand ? Rig.Instance.leftHand : Rig.Instance.rightHand;
+            Transform body = Rig.Instance.body;
+            Vector3 initialPosition = hand.transform.position;
+            Vector3 targetPosition = body.position + Vector3.down * handGroundDistance;
+
+            // Move hand down
+            float timer = 0;
+            while (timer < handDownDuration)
+            {
+                timer += Time.deltaTime;
+                float progress = timer / handDownDuration;
+                hand.transform.position = Vector3.Lerp(initialPosition, targetPosition, progress);
+                yield return null;
+            }
+
+            hand.transform.position = targetPosition;
+
+            switch (activationPoint)
+            {
+                case GroundingActivationPoint.OnReachGround:
+                    SetButtonState(hand, true);
+                    yield return new WaitForSeconds(buttonHoldDuration);
+                    SetButtonState(hand, false);
+                    break;
+
+                case GroundingActivationPoint.MidHold:
+                    yield return new WaitForSeconds(buttonHoldDuration / 2);
+                    SetButtonState(hand, true);
+                    yield return new WaitForSeconds(buttonHoldDuration / 2);
+                    SetButtonState(hand, false);
+                    break;
+
+                case GroundingActivationPoint.OnRelease:
+                    yield return new WaitForSeconds(buttonHoldDuration);
+                    SetButtonState(hand, true);
+                    break;
+            }
+
+            // Move hand up
+            timer = 0;
+            while (timer < handUpDuration)
+            {
+                timer += Time.deltaTime;
+                float progress = timer / handUpDuration;
+                hand.transform.position = Vector3.Lerp(targetPosition, initialPosition, progress);
+                yield return null;
+            }
+
+            hand.transform.position = initialPosition;
+
+            if (activationPoint == GroundingActivationPoint.OnRelease)
+            {
+                SetButtonState(hand, false);
+            }
+        }
+        private void SetButtonState(HandDriver hand, bool state)
+        {
+            switch (selectedHandButton)
+            {
+                case HandButton.Grip:
+                    hand.grip = state;
+                    break;
+                case HandButton.Trigger:
+                    hand.trigger = state;
+                    break;
+                case HandButton.Primary:
+                    hand.primary = state;
+                    break;
+                case HandButton.Secondary:
+                    hand.secondary = state;
+                    break;
+            }
+        }
+        #endregion
         private void UpdateMovement(Transform localBody, Transform targetTransform)
         {
             Vector3 directionToTarget = targetTransform.position - localBody.position;
@@ -599,45 +681,6 @@ namespace WalkSimulator
         {
             walkAnimator.enabled = true;
             InputHandler.inputDirectionNoY = new Vector3(localDirection.x, 0f, localDirection.z);
-        }
-        public void PerformHandGrounding(bool isLeftHand)
-        {
-            StartCoroutine(HandGroundingRoutine(isLeftHand));
-        }
-        private IEnumerator HandGroundingRoutine(bool isLeftHand)
-        {
-            HandDriver hand = isLeftHand ? Rig.Instance.leftHand : Rig.Instance.rightHand;
-            Transform body = Rig.Instance.body;
-            Vector3 initialPosition = hand.transform.position;
-            Vector3 targetPosition = body.position + Vector3.down * handGroundDistance;
-
-            // Move hand down
-            float timer = 0;
-            while (timer < handDownDuration)
-            {
-                timer += Time.deltaTime;
-                float progress = timer / handDownDuration;
-                hand.transform.position = Vector3.Lerp(initialPosition, targetPosition, progress);
-                yield return null;
-            }
-
-            hand.transform.position = targetPosition;
-
-            hand.grip = true;
-            yield return new WaitForSeconds(gripHoldDuration);
-
-            hand.grip = false;
-
-            timer = 0;
-            while (timer < handUpDuration)
-            {
-                timer += Time.deltaTime;
-                float progress = timer / handUpDuration;
-                hand.transform.position = Vector3.Lerp(targetPosition, initialPosition, progress);
-                yield return null;
-            }
-
-            hand.transform.position = initialPosition;
         }
         #endregion
         #region MovementUtils
@@ -813,6 +856,10 @@ namespace WalkSimulator
         private GUIStyle sectionStyle;
         private GUIStyle sliderLabelStyle;
         private Color originalColorWhenPickerOpened;
+
+        // Hand
+        public enum HandButton { Grip, Trigger, Primary, Secondary }
+        public enum GroundingActivationPoint { OnReachGround, MidHold, OnRelease }
 
         public PlayerFollowerGUI(PlayerFollower follower)
         {
@@ -1086,21 +1133,57 @@ namespace WalkSimulator
         {
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Misc", headerStyle);
+            GUILayout.EndVertical();
 
-            if (GUILayout.Button("Sequence Hand"))
+            GUILayout.BeginVertical(sectionStyle);
+            GUILayout.Label("Hand Grounding Settings", headerStyle);
+
+            GUILayout.Label("Activation Point:");
+            GUILayout.BeginHorizontal();
+            foreach (GroundingActivationPoint point in Enum.GetValues(typeof(GroundingActivationPoint)))
+            {
+                if (GUILayout.Toggle(follower.activationPoint == point, point.ToString()))
+                {
+                    follower.activationPoint = point;
+                }
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Label($"Hand Down Duration: {follower.handDownDuration:F1}s");
+            follower.handDownDuration = GUILayout.HorizontalSlider(follower.handDownDuration, 0.1f, 2f);
+
+            GUILayout.Label($"Button Hold Duration: {follower.buttonHoldDuration:F1}s");
+            follower.buttonHoldDuration = GUILayout.HorizontalSlider(follower.buttonHoldDuration, 0.1f, 3f);
+
+            GUILayout.Label($"Hand Up Duration: {follower.handUpDuration:F1}s");
+            follower.handUpDuration = GUILayout.HorizontalSlider(follower.handUpDuration, 0.1f, 2f);
+
+            GUILayout.Label("Activation Button:");
+            GUILayout.BeginHorizontal();
+            foreach (HandButton button in Enum.GetValues(typeof(HandButton)))
+            {
+                if (GUILayout.Toggle(follower.selectedHandButton == button, button.ToString()))
+                {
+                    follower.selectedHandButton = button;
+                }
+            }
+            GUILayout.EndHorizontal();
+
+            if (GUILayout.Button("Perform Hand Grounding"))
             {
                 follower.PerformHandGrounding(true);
             }
 
             GUILayout.EndVertical();
 
+            /*
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label($"Active Objects ({follower.activeObjects.Count})", headerStyle);
 
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Refresh Objects"))
             {
-                follower.ScanActiveObjects();
+             follower.ScanActiveObjects();
             }
             GUILayout.Label($"Scan Interval: {follower.scanInterval}s");
             follower.scanInterval = GUILayout.HorizontalSlider(follower.scanInterval, 0.5f, 5f);
@@ -1109,26 +1192,26 @@ namespace WalkSimulator
             scrollPosition = GUILayout.BeginScrollView(scrollPosition);
             foreach (GameObject obj in follower.activeObjects.OrderBy(o => o.name))
             {
-                GUILayout.BeginHorizontal(GUI.skin.box);
+             GUILayout.BeginHorizontal(GUI.skin.box);
 
-                GUILayout.Label($"{obj.name}", GUILayout.Width(150));
-                string type = obj.GetComponent<Collider>() ? "[Collider]" : "[No Collider]";
-                GUILayout.Label(type, GUILayout.Width(80));
+             GUILayout.Label($"{obj.name}", GUILayout.Width(150));
+             string type = obj.GetComponent<Collider>() ? "[Collider]" : "[No Collider]";
+             GUILayout.Label(type, GUILayout.Width(80));
 
-                Vector3 pos = obj.transform.position;
-                float distance = Vector3.Distance(pos, Rig.Instance.body.position);
-                GUILayout.Label($"Dist: {distance:F1}m", GUILayout.Width(80));
+             Vector3 pos = obj.transform.position;
+             float distance = Vector3.Distance(pos, Rig.Instance.body.position);
+             GUILayout.Label($"Dist: {distance:F1}m", GUILayout.Width(80));
 
-                GUILayout.Label($"Layer: {LayerMask.LayerToName(obj.layer)}");
+             GUILayout.Label($"Layer: {LayerMask.LayerToName(obj.layer)}");
 
-                GUILayout.EndHorizontal();
+             GUILayout.EndHorizontal();
             }
-            GUILayout.EndScrollView();
+
             GUILayout.EndVertical();
+            */
 
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Tag Settings", headerStyle);
-
 
             if (!follower.isTagging)
             {
