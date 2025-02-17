@@ -17,5 +17,4 @@ this a gorilla tag bot
 GorillaBot is the result of collaborative development. Special thanks to:
 - https://github.com/official-notfishvr - Main Developer
 - https://github.com/antixcat           - Developer
-- https://github.com/finnpluh           - Developer
 - https://github.com/KyleTheScientist   - WalkSimulator?
