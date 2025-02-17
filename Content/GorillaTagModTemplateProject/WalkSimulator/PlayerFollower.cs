@@ -50,6 +50,7 @@ namespace WalkSimulator
         private float tagDuration = 60f;
         public float tagTimer = 0f;
         public Player taggedPlayer;
+
         // Hand Grounding
         public PlayerFollowerGUI.HandButton selectedHandButton = PlayerFollowerGUI.HandButton.Grip;
         public PlayerFollowerGUI.GroundingActivationPoint activationPoint = PlayerFollowerGUI.GroundingActivationPoint.OnReachGround;
@@ -59,6 +60,7 @@ namespace WalkSimulator
         public float handGroundDistance = 0.5f;
 
         // Object Scanning
+        public bool avoidObjects = false;
         public List<GameObject> activeObjects = new List<GameObject>();
         public float scanInterval = 100f;
         private float scanTimer = 0f;
@@ -78,6 +80,11 @@ namespace WalkSimulator
         private List<Vector3> taggingWaypoints = new List<Vector3>();
         private int currentFollowingWaypointIndex = 0;
         private int currentTaggingWaypointIndex = 0;
+
+        // Flee
+        public bool fleeEnabled;
+        private const float FLEE_RADIUS = 10f;
+
 
         private void Awake()
         {
@@ -160,7 +167,10 @@ namespace WalkSimulator
                 UpdateWaypoints();
                 lastWaypointUpdateTime = Time.time;
             }
-
+            if (fleeEnabled)
+            {
+                FleeFromTaggers();
+            }
             if (followPlayerEnabled && currentPlayer != null)
             {
                 //MoveToTargetPlayerWithWaypoints();
@@ -641,11 +651,59 @@ namespace WalkSimulator
             if ((selectedHandButton & PlayerFollowerGUI.HandButton.Secondary) != 0) { hand.secondary = state; }
         }
         #endregion
+        private void FleeFromTaggers()
+        {
+            Transform localBody = Rig.Instance.body;
+            if (localBody == null) return;
+
+            List<Vector3> taggedPlayerPositions = new List<Vector3>();
+            foreach (Player player in PhotonNetwork.PlayerList)
+            {
+                var vrrig = GorillaGameManager.instance.FindPlayerVRRig(player);
+                if (vrrig != null && PlayerIsTagged(vrrig))
+                {
+                    taggedPlayerPositions.Add(vrrig.transform.position);
+                }
+            }
+
+            if (taggedPlayerPositions.Count == 0)
+            {
+                StopMovement();
+                return;
+            }
+
+            Vector3 fleeDirection = Vector3.zero;
+            foreach (Vector3 pos in taggedPlayerPositions)
+            {
+                Vector3 toTagger = localBody.position - pos;
+                float distance = toTagger.magnitude;
+                if (distance < FLEE_RADIUS)
+                {
+                    fleeDirection += toTagger.normalized * (1 / Mathf.Max(distance, 0.1f));
+                }
+            }
+
+            if (fleeDirection == Vector3.zero)
+            {
+                StopMovement();
+                return;
+            }
+
+            fleeDirection.Normalize();
+            fleeDirection = AvoidObstaclesTaggers(localBody.position, fleeDirection);
+
+            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * fleeDirection;
+            lineRenderers.UpdateLineRenderersForPath(localBody, fleeDirection);
+            StartMovement(localDirection);
+            TurnTowardsTargetPosition(localBody, localBody.position + fleeDirection);
+        }
         private void UpdateMovement(Transform localBody, Transform targetTransform)
         {
             Vector3 directionToTarget = targetTransform.position - localBody.position;
             directionToTarget.y = 0f;
             float distanceToTarget = directionToTarget.magnitude;
+
+            Vector3 finalDirection = avoidObjects ? AvoidObstacles(localBody.position, directionToTarget.normalized) : directionToTarget.normalized;
 
             if (distanceToTarget < TARGET_PROXIMITY_THRESHOLD)
             {
@@ -653,7 +711,10 @@ namespace WalkSimulator
                 return;
             }
 
-            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * directionToTarget.normalized;
+            //lineRenderers.UpdateLineRenderersForPath(localBody, localBody.position + finalDirection * 5f);
+
+            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * finalDirection;
+            //Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * directionToTarget.normalized;
             StartMovement(localDirection);
             TurnTowardsTarget(targetTransform, localBody);
         }
@@ -753,6 +814,67 @@ namespace WalkSimulator
 
                 GorillaLocomotion.Player.Instance.Turn(turnAmount);
             }
+        }
+        private Vector3 AvoidObstaclesTaggers(Vector3 currentPosition, Vector3 desiredDirection)
+        {
+            Collider[] obstacles = Physics.OverlapSphere(currentPosition, avoidanceRadius, obstacleLayers);
+            Vector3 avoidance = Vector3.zero;
+
+            foreach (Collider col in obstacles)
+            {
+                Vector3 toObstacle = col.transform.position - currentPosition;
+                float distance = toObstacle.magnitude;
+                if (distance < avoidanceRadius)
+                {
+                    Vector3 avoidDir = -toObstacle.normalized;
+                    avoidance += avoidDir * (avoidanceRadius - distance);
+                }
+            }
+
+            if (avoidance != Vector3.zero)
+            {
+                avoidance.Normalize();
+                desiredDirection = (desiredDirection + avoidance).normalized;
+            }
+
+            return desiredDirection;
+        }
+        private Vector3 AvoidObstacles(Vector3 currentPosition, Vector3 desiredDirection)
+        {
+            Vector3 avoidance = Vector3.zero;
+
+            foreach (GameObject obstacle in activeObjects)
+            {
+                if (obstacle == null) continue;
+
+                Vector3 toObstacle = obstacle.transform.position - currentPosition;
+                float distance = toObstacle.magnitude;
+
+                if (distance < avoidanceRadius)
+                {
+                    Collider obstacleCollider = obstacle.GetComponent<Collider>();
+                    if (obstacleCollider == null) continue;
+
+                    Vector3 closestPoint = obstacleCollider.ClosestPoint(currentPosition);
+                    Vector3 avoidDir = currentPosition - closestPoint;
+                    float closestDistance = avoidDir.magnitude;
+
+                    if (closestDistance < avoidanceRadius)
+                    {
+                        float weight = (avoidanceRadius - closestDistance) / avoidanceRadius;
+                        avoidance += avoidDir.normalized * weight;
+                    }
+                }
+            }
+
+            if (avoidance != Vector3.zero)
+            {
+                avoidance.Normalize();
+                Vector3 blendedDirection = Vector3.Lerp(desiredDirection, avoidance, 0.7f);
+                return blendedDirection.normalized;
+            }
+
+            return desiredDirection;
         }
         #endregion
         #region Preset Management
@@ -1126,6 +1248,40 @@ namespace WalkSimulator
         {
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Misc", headerStyle);
+            if (GUILayout.Button("Refresh Objects"))
+            {
+                follower.ScanActiveObjects();
+            }
+            if (!follower.avoidObjects)
+            {
+                if (GUILayout.Button("Start Avoid Objects"))
+                {
+                    follower.ScanActiveObjects();
+                    follower.avoidObjects = true;
+                }
+            }
+            else
+            {
+                if (GUILayout.Button("Stop Avoid Objects"))
+                {
+                    follower.avoidObjects = false;
+                }
+            }
+            GUILayout.EndVertical();
+
+            GUILayout.BeginVertical(sectionStyle);
+            GUILayout.Label("Flee Settings", headerStyle);
+            bool newFleeEnabled = GUILayout.Toggle(follower.fleeEnabled, "Flee from Taggers");
+            if (newFleeEnabled != follower.fleeEnabled)
+            {
+                follower.fleeEnabled = newFleeEnabled;
+                if (newFleeEnabled)
+                {
+                    follower.followPlayerEnabled = false;
+                    follower.followPathEnabled = false;
+                    follower.isTagging = false;
+                }
+            }
             GUILayout.EndVertical();
 
             GUILayout.BeginVertical(sectionStyle);
