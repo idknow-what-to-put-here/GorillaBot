@@ -8,9 +8,18 @@ namespace WalkSimulator.Animators
 {
     public class WalkAnimator : AnimatorBase
     {
+        public enum WalkAnimationMode
+        {
+            Default,
+            Smooth,
+            Tall,
+            Short
+        }
+
         [SerializeField] public float speed = 4f;
         [SerializeField] private float height = 0.4f;
         [SerializeField] private float raycastDistanceMultiplier = 0.5f;
+        [SerializeField] private WalkAnimationMode animationMode = WalkAnimationMode.Short;
 
         private float targetHeight;
         private bool hasJumped;
@@ -55,6 +64,7 @@ namespace WalkSimulator.Animators
             rig.active = false;
             rigidbody.AddForce(Vector3.up * 235f * Player.Instance.scale, ForceMode.Impulse);
         }
+
         public void JumpPath(float requiredHeight)
         {
             hasJumped = true;
@@ -67,6 +77,7 @@ namespace WalkSimulator.Animators
 
             rigidbody.AddForce(Vector3.up * jumpVelocity * Player.Instance.scale, ForceMode.Impulse);
         }
+
         public void MoveBody()
         {
             rig.active = rig.onGround && !hasJumped;
@@ -77,11 +88,10 @@ namespace WalkSimulator.Animators
                 return;
             }
 
-            float crouchMultiplier = Keyboard.current.ctrlKey.isPressed ? 0.6f : 1f;
-            float minHeight = 0.5f * crouchMultiplier;
-            float maxHeight = 0.55f * crouchMultiplier;
+            float minHeight, maxHeight, modeSpeedMultiplier;
+            AdjustParametersBasedOnMode(out minHeight, out maxHeight, out modeSpeedMultiplier);
 
-            float cycleSpeed = NotMoving ? 2f * Mathf.PI : walkCycleTime * 2f * Mathf.PI;
+            float cycleSpeed = NotMoving ? 2f * Mathf.PI : walkCycleTime * 2f * Mathf.PI * modeSpeedMultiplier;
             float heightOffset = Extensions.Map(Mathf.Sin(cycleSpeed), -1f, 1f, minHeight, maxHeight);
 
             targetHeight = heightOffset;
@@ -100,6 +110,39 @@ namespace WalkSimulator.Animators
             targetPosition += movementDirection * currentSpeed / 10f;
 
             rig.targetPosition = targetPosition;
+        }
+
+        private void AdjustParametersBasedOnMode(out float minHeight, out float maxHeight, out float modeSpeedMultiplier)
+        {
+            float crouchMultiplier = Keyboard.current.ctrlKey.isPressed ? 0.6f : 1f;
+
+            switch (animationMode)
+            {
+                case WalkAnimationMode.Smooth:
+                    // Very slight bounce for a smooth walk.
+                    minHeight = 0.52f * crouchMultiplier;
+                    maxHeight = 0.53f * crouchMultiplier;
+                    modeSpeedMultiplier = 0.8f;
+                    break;
+                case WalkAnimationMode.Tall:
+                    // More exaggerated vertical motion.
+                    minHeight = 0.58f * crouchMultiplier;
+                    maxHeight = 0.74f * crouchMultiplier;
+                    modeSpeedMultiplier = 1.2f;
+                    break;
+                case WalkAnimationMode.Short:
+                    // Less vertical bounce.
+                    minHeight = 0.34f * crouchMultiplier;
+                    maxHeight = 0.41f * crouchMultiplier;
+                    modeSpeedMultiplier = 1.0f;
+                    break;
+                default:
+                    // Default walk parameters.
+                    minHeight = 0.5f * crouchMultiplier;
+                    maxHeight = 0.55f * crouchMultiplier;
+                    modeSpeedMultiplier = 1.0f;
+                    break;
+            }
         }
 
         private void AnimateHands()
@@ -194,7 +237,7 @@ namespace WalkSimulator.Animators
             float stepLengthInfluence = Extensions.Map(forwardInfluence, 0f, 1f, 0.5f, 1.25f);
 
             stepLengthInfluence *= stepHeightInfluence * Player.Instance.scale;
-            float stepHeight = 0.2f * Player.Instance.scale;
+            float stepHeight = GetStepHeight();
 
             float distanceSinceLastStep = otherHand.hit.Distance(otherHand.lastSnap) / stepLengthInfluence;
 
@@ -219,6 +262,22 @@ namespace WalkSimulator.Animators
             if (hand.targetPosition.Distance(hand.DefaultPosition) > 1f)
             {
                 hand.targetPosition = hand.DefaultPosition;
+            }
+        }
+
+        private float GetStepHeight()
+        {
+            float scale = Player.Instance.scale;
+            switch (animationMode)
+            {
+                case WalkAnimationMode.Smooth:
+                    return 0.15f * scale;
+                case WalkAnimationMode.Tall:
+                    return 0.38f * scale;
+                case WalkAnimationMode.Short:
+                    return 0.04f * scale;
+                default:
+                    return 0.2f * scale;
             }
         }
 

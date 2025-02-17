@@ -23,6 +23,7 @@ namespace WalkSimulator
         private const float ROTATION_THRESHOLD = 1f;
         private const float JUMP_HEIGHT_THRESHOLD = 0.6f;
         private const float JUMP_PREPARATION_DISTANCE = 1.2f;
+        private const float WAYPOINT_UPDATE_INTERVAL = 5.0f;
 
         public bool followPlayerEnabled;
         public bool followPathEnabled;
@@ -74,7 +75,6 @@ namespace WalkSimulator
         };
 
         // Waypoints for Tagging & Following
-        private const float WAYPOINT_UPDATE_INTERVAL = 5.0f;
         private float lastWaypointUpdateTime = 0f;
         private List<Vector3> followingWaypoints = new List<Vector3>();
         private List<Vector3> taggingWaypoints = new List<Vector3>();
@@ -83,8 +83,7 @@ namespace WalkSimulator
 
         // Flee
         public bool fleeEnabled;
-        private const float FLEE_RADIUS = 10f;
-
+        public float FLEE_RADIUS = 10f;
 
         private void Awake()
         {
@@ -1271,6 +1270,10 @@ namespace WalkSimulator
 
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Flee Settings", headerStyle);
+
+            GUILayout.Label($"Flee Radius : {follower.FLEE_RADIUS:F1}s");
+            follower.FLEE_RADIUS = GUILayout.HorizontalSlider(follower.FLEE_RADIUS, 0.1f, 30f);
+
             bool newFleeEnabled = GUILayout.Toggle(follower.fleeEnabled, "Flee from Taggers");
             if (newFleeEnabled != follower.fleeEnabled)
             {
