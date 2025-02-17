@@ -6,17 +6,17 @@ using System.Collections.Generic;
 using WalkSimulator.Animators;
 using WalkSimulator.Rigging;
 using System.IO;
-using GorillaTagScripts;
 using System.Collections;
 using System.Linq;
 using UnityEngine.SceneManagement;
 using System;
-using static WalkSimulator.PlayerFollowerGUI;
 
 namespace WalkSimulator
 {
     public class PlayerFollower : MonoBehaviour
     {
+        private PlayerFollowerGUI gui;
+
         private const float TARGET_PROXIMITY_THRESHOLD = 0.5f;
         private const float MAX_TURN_SPEED = 15f;
         private const float TURN_SPEED_DIVISOR = 10f;
@@ -50,10 +50,9 @@ namespace WalkSimulator
         private float tagDuration = 60f;
         public float tagTimer = 0f;
         public Player taggedPlayer;
-
         // Hand Grounding
-        public HandButton selectedHandButton = HandButton.Grip;
-        public GroundingActivationPoint activationPoint = GroundingActivationPoint.OnReachGround;
+        public PlayerFollowerGUI.HandButton selectedHandButton = PlayerFollowerGUI.HandButton.Grip;
+        public PlayerFollowerGUI.GroundingActivationPoint activationPoint = PlayerFollowerGUI.GroundingActivationPoint.OnReachGround;
         public float handDownDuration = 0.5f;
         public float buttonHoldDuration = 1.0f;
         public float handUpDuration = 0.5f;
@@ -79,9 +78,6 @@ namespace WalkSimulator
         private List<Vector3> taggingWaypoints = new List<Vector3>();
         private int currentFollowingWaypointIndex = 0;
         private int currentTaggingWaypointIndex = 0;
-
-
-        private PlayerFollowerGUI gui;
 
         private void Awake()
         {
@@ -601,20 +597,20 @@ namespace WalkSimulator
 
             switch (activationPoint)
             {
-                case GroundingActivationPoint.OnReachGround:
+                case PlayerFollowerGUI.GroundingActivationPoint.OnReachGround:
                     SetButtonState(hand, true);
                     yield return new WaitForSeconds(buttonHoldDuration);
                     SetButtonState(hand, false);
                     break;
 
-                case GroundingActivationPoint.MidHold:
+                case PlayerFollowerGUI.GroundingActivationPoint.MidHold:
                     yield return new WaitForSeconds(buttonHoldDuration / 2);
                     SetButtonState(hand, true);
                     yield return new WaitForSeconds(buttonHoldDuration / 2);
                     SetButtonState(hand, false);
                     break;
 
-                case GroundingActivationPoint.OnRelease:
+                case PlayerFollowerGUI.GroundingActivationPoint.OnRelease:
                     yield return new WaitForSeconds(buttonHoldDuration);
                     SetButtonState(hand, true);
                     break;
@@ -632,28 +628,17 @@ namespace WalkSimulator
 
             hand.transform.position = initialPosition;
 
-            if (activationPoint == GroundingActivationPoint.OnRelease)
+            if (activationPoint == PlayerFollowerGUI.GroundingActivationPoint.OnRelease)
             {
                 SetButtonState(hand, false);
             }
         }
         private void SetButtonState(HandDriver hand, bool state)
         {
-            switch (selectedHandButton)
-            {
-                case HandButton.Grip:
-                    hand.grip = state;
-                    break;
-                case HandButton.Trigger:
-                    hand.trigger = state;
-                    break;
-                case HandButton.Primary:
-                    hand.primary = state;
-                    break;
-                case HandButton.Secondary:
-                    hand.secondary = state;
-                    break;
-            }
+            if ((selectedHandButton & PlayerFollowerGUI.HandButton.Grip) != 0)      { hand.grip = state; }
+            if ((selectedHandButton & PlayerFollowerGUI.HandButton.Trigger) != 0)   { hand.trigger = state; }
+            if ((selectedHandButton & PlayerFollowerGUI.HandButton.Primary) != 0)   { hand.primary = state; }
+            if ((selectedHandButton & PlayerFollowerGUI.HandButton.Secondary) != 0) { hand.secondary = state; }
         }
         #endregion
         private void UpdateMovement(Transform localBody, Transform targetTransform)
@@ -858,8 +843,16 @@ namespace WalkSimulator
         private Color originalColorWhenPickerOpened;
 
         // Hand
-        public enum HandButton { Grip, Trigger, Primary, Secondary }
+        [System.Flags]
+        public enum HandButton
+        {
+            Grip = 1 << 0, // 1
+            Trigger = 1 << 1, // 2
+            Primary = 1 << 2, // 4
+            Secondary = 1 << 3  // 8
+        }
         public enum GroundingActivationPoint { OnReachGround, MidHold, OnRelease }
+        private bool isLeftHanded = true;
 
         public PlayerFollowerGUI(PlayerFollower follower)
         {
@@ -1158,20 +1151,35 @@ namespace WalkSimulator
             GUILayout.Label($"Hand Up Duration: {follower.handUpDuration:F1}s");
             follower.handUpDuration = GUILayout.HorizontalSlider(follower.handUpDuration, 0.1f, 2f);
 
-            GUILayout.Label("Activation Button:");
+            GUILayout.Label("Activation Button(s):");
             GUILayout.BeginHorizontal();
             foreach (HandButton button in Enum.GetValues(typeof(HandButton)))
             {
-                if (GUILayout.Toggle(follower.selectedHandButton == button, button.ToString()))
+                bool active = (follower.selectedHandButton & button) != 0;
+                bool newActive = GUILayout.Toggle(active, button.ToString());
+                if (newActive != active)
                 {
-                    follower.selectedHandButton = button;
+                    if (newActive) { follower.selectedHandButton |= button; }
+                    else { follower.selectedHandButton &= ~button; }
                 }
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Label("Select Hand:");
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Toggle(isLeftHanded, "Left-Handed"))
+            {
+                isLeftHanded = true;
+            }
+            if (GUILayout.Toggle(!isLeftHanded, "Right-Handed"))
+            {
+                isLeftHanded = false;
             }
             GUILayout.EndHorizontal();
 
             if (GUILayout.Button("Perform Hand Grounding"))
             {
-                follower.PerformHandGrounding(true);
+                follower.PerformHandGrounding(isLeftHanded);
             }
 
             GUILayout.EndVertical();
@@ -1183,7 +1191,7 @@ namespace WalkSimulator
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Refresh Objects"))
             {
-             follower.ScanActiveObjects();
+                follower.ScanActiveObjects();
             }
             GUILayout.Label($"Scan Interval: {follower.scanInterval}s");
             follower.scanInterval = GUILayout.HorizontalSlider(follower.scanInterval, 0.5f, 5f);
@@ -1192,19 +1200,19 @@ namespace WalkSimulator
             scrollPosition = GUILayout.BeginScrollView(scrollPosition);
             foreach (GameObject obj in follower.activeObjects.OrderBy(o => o.name))
             {
-             GUILayout.BeginHorizontal(GUI.skin.box);
+                GUILayout.BeginHorizontal(GUI.skin.box);
 
-             GUILayout.Label($"{obj.name}", GUILayout.Width(150));
-             string type = obj.GetComponent<Collider>() ? "[Collider]" : "[No Collider]";
-             GUILayout.Label(type, GUILayout.Width(80));
+                GUILayout.Label($"{obj.name}", GUILayout.Width(150));
+                string type = obj.GetComponent<Collider>() ? "[Collider]" : "[No Collider]";
+                GUILayout.Label(type, GUILayout.Width(80));
 
-             Vector3 pos = obj.transform.position;
-             float distance = Vector3.Distance(pos, Rig.Instance.body.position);
-             GUILayout.Label($"Dist: {distance:F1}m", GUILayout.Width(80));
+                Vector3 pos = obj.transform.position;
+                float distance = Vector3.Distance(pos, Rig.Instance.body.position);
+                GUILayout.Label($"Dist: {distance:F1}m", GUILayout.Width(80));
 
-             GUILayout.Label($"Layer: {LayerMask.LayerToName(obj.layer)}");
+                GUILayout.Label($"Layer: {LayerMask.LayerToName(obj.layer)}");
 
-             GUILayout.EndHorizontal();
+                GUILayout.EndHorizontal();
             }
 
             GUILayout.EndVertical();
