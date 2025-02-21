@@ -119,25 +119,21 @@ namespace WalkSimulator.Animators
             switch (animationMode)
             {
                 case WalkAnimationMode.Smooth:
-                    // Very slight bounce for a smooth walk.
                     minHeight = 0.52f * crouchMultiplier;
                     maxHeight = 0.53f * crouchMultiplier;
                     modeSpeedMultiplier = 0.8f;
                     break;
                 case WalkAnimationMode.Tall:
-                    // More exaggerated vertical motion.
                     minHeight = 0.58f * crouchMultiplier;
                     maxHeight = 0.74f * crouchMultiplier;
                     modeSpeedMultiplier = 1.2f;
                     break;
                 case WalkAnimationMode.Short:
-                    // Less vertical bounce.
                     minHeight = 0.34f * crouchMultiplier;
                     maxHeight = 0.41f * crouchMultiplier;
                     modeSpeedMultiplier = 1.0f;
                     break;
                 default:
-                    // Default walk parameters.
                     minHeight = 0.5f * crouchMultiplier;
                     maxHeight = 0.55f * crouchMultiplier;
                     modeSpeedMultiplier = 1.0f;

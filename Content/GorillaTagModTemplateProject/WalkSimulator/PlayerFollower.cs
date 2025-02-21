@@ -23,7 +23,7 @@ namespace WalkSimulator
         private const float ROTATION_THRESHOLD = 1f;
         private const float JUMP_HEIGHT_THRESHOLD = 0.6f;
         private const float JUMP_PREPARATION_DISTANCE = 1.2f;
-        private const float WAYPOINT_UPDATE_INTERVAL = 5.0f;
+        //private const float WAYPOINT_UPDATE_INTERVAL = 5.0f;
 
         public bool followPlayerEnabled;
         public bool followPathEnabled;
@@ -52,9 +52,9 @@ namespace WalkSimulator
         public float tagTimer = 0f;
         public Player taggedPlayer;
 
-        // Hand Grounding
+        // Hand
         public PlayerFollowerGUI.HandButton selectedHandButton = PlayerFollowerGUI.HandButton.Grip;
-        public PlayerFollowerGUI.GroundingActivationPoint activationPoint = PlayerFollowerGUI.GroundingActivationPoint.OnReachGround;
+        public PlayerFollowerGUI.ActivationPoint activationPoint = PlayerFollowerGUI.ActivationPoint.OnReachGround;
         public float handDownDuration = 0.5f;
         public float buttonHoldDuration = 1.0f;
         public float handUpDuration = 0.5f;
@@ -71,15 +71,9 @@ namespace WalkSimulator
         {
             "Environment Objects/LocalObjects_Prefab/Forest/Terrain/SmallTrees/",
             "Environment Objects/LocalObjects_Prefab/Forest/Terrain/campgroundstructure/",
-            "Environment Objects/LocalObjects_Prefab/Forest/Terrain/slide/"
+            "Environment Objects/LocalObjects_Prefab/Forest/Terrain/slide/",
+            "Environment Objects/LocalObjects_Prefab/Forest/Terrain/pitgeo/",
         };
-
-        // Waypoints for Tagging & Following
-        private float lastWaypointUpdateTime = 0f;
-        private List<Vector3> followingWaypoints = new List<Vector3>();
-        private List<Vector3> taggingWaypoints = new List<Vector3>();
-        private int currentFollowingWaypointIndex = 0;
-        private int currentTaggingWaypointIndex = 0;
 
         // Flee
         public bool fleeEnabled;
@@ -161,11 +155,13 @@ namespace WalkSimulator
         {
             Transform localBody = Rig.Instance.body;
 
+            /*
             if (Time.time - lastWaypointUpdateTime >= WAYPOINT_UPDATE_INTERVAL)
             {
                 UpdateWaypoints();
                 lastWaypointUpdateTime = Time.time;
             }
+            */
             if (fleeEnabled)
             {
                 FleeFromTaggers();
@@ -317,11 +313,7 @@ namespace WalkSimulator
             }
 
             string text = who.mainSkin.material.name.ToLower();
-            return
-                text.Contains("fected") ||
-                text.Contains("it") ||
-                text.Contains("stealth") ||
-                !who.nameTagAnchor.activeSelf;
+            return text.Contains("fected") || text.Contains("it") || text.Contains("stealth") || !who.nameTagAnchor.activeSelf;
         }
         public static List<NetPlayer> InfectedList()
         {
@@ -429,163 +421,12 @@ namespace WalkSimulator
             logger.LogInfo("Pathing stopped.");
         }
         #endregion
-        #region Tagging & Following With Waypoints
-        private void UpdateWaypoints()
-        {
-            if (followPlayerEnabled && currentPlayer != null)
-            {
-                var (targetTransform, _) = GetPlayerTransforms();
-                if (targetTransform != null)
-                {
-                    UpdateFollowingWaypoints(targetTransform.position);
-                }
-            }
-
-            if (isTagging && taggedPlayer != null)
-            {
-                var (targetTransform, _) = GetPlayerTransforms(taggedPlayer);
-                if (targetTransform != null)
-                {
-                    UpdateTaggingWaypoints(targetTransform.position);
-                }
-            }
-        }
-        private void UpdateFollowingWaypoints(Vector3 targetPosition)
-        {
-            Vector3 currentPosition = Rig.Instance.body.position;
-            followingWaypoints.Clear();
-
-            int numWaypoints = 3;
-            for (int i = 0; i <= numWaypoints; i++)
-            {
-                float t = i / (float)numWaypoints;
-                Vector3 waypoint = Vector3.Lerp(currentPosition, targetPosition, t);
-                if (i != 0 && i != numWaypoints)
-                {
-                    waypoint += new Vector3(
-                        UnityEngine.Random.Range(-0.5f, 0.5f),
-                        0,
-                        UnityEngine.Random.Range(-0.5f, 0.5f)
-                    );
-                }
-
-                followingWaypoints.Add(waypoint);
-            }
-
-            currentFollowingWaypointIndex = 0;
-        }
-        private void UpdateTaggingWaypoints(Vector3 targetPosition)
-        {
-            Vector3 currentPosition = Rig.Instance.body.position;
-            taggingWaypoints.Clear();
-
-            int numWaypoints = 2;
-            for (int i = 0; i <= numWaypoints; i++)
-            {
-                float t = i / (float)numWaypoints;
-                Vector3 waypoint = Vector3.Lerp(currentPosition, targetPosition, t);
-
-                if (i != 0 && i != numWaypoints)
-                {
-                    waypoint += new Vector3(
-                        UnityEngine.Random.Range(-0.3f, 0.3f),
-                        0,
-                        UnityEngine.Random.Range(-0.3f, 0.3f)
-                    );
-                }
-
-                taggingWaypoints.Add(waypoint);
-            }
-
-            currentTaggingWaypointIndex = 0;
-        }
-        private void MoveToTargetPlayerWithWaypoints()
-        {
-            Transform localBody = Rig.Instance.body;
-            if (localBody == null) return;
-
-            if (followingWaypoints.Count == 0)
-            {
-                var (targetTransform, _) = GetPlayerTransforms();
-                if (targetTransform != null)
-                {
-                    UpdateFollowingWaypoints(targetTransform.position);
-                }
-                return;
-            }
-
-            Vector3 currentWaypoint = followingWaypoints[currentFollowingWaypointIndex];
-            Vector3 directionToWaypoint = currentWaypoint - localBody.position;
-            directionToWaypoint.y = 0f;
-            float distanceToWaypoint = directionToWaypoint.magnitude;
-
-            lineRenderers.UpdateLineRenderersForPath(localBody, currentWaypoint);
-
-            if (distanceToWaypoint < TARGET_PROXIMITY_THRESHOLD)
-            {
-                currentFollowingWaypointIndex++;
-                if (currentFollowingWaypointIndex >= followingWaypoints.Count)
-                {
-                    var (targetTransform, _) = GetPlayerTransforms();
-                    if (targetTransform != null)
-                    {
-                        UpdateFollowingWaypoints(targetTransform.position);
-                    }
-                }
-                return;
-            }
-
-            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * directionToWaypoint.normalized;
-            StartMovement(localDirection);
-            TurnTowardsTargetPosition(localBody, currentWaypoint);
-        }
-        private void MoveToTaggedPlayerWithWaypoints()
-        {
-            Transform localBody = Rig.Instance.body;
-            if (localBody == null) return;
-
-            if (taggingWaypoints.Count == 0)
-            {
-                var (targetTransform, _) = GetPlayerTransforms(taggedPlayer);
-                if (targetTransform != null)
-                {
-                    UpdateTaggingWaypoints(targetTransform.position);
-                }
-                return;
-            }
-
-            Vector3 currentWaypoint = taggingWaypoints[currentTaggingWaypointIndex];
-            Vector3 directionToWaypoint = currentWaypoint - localBody.position;
-            directionToWaypoint.y = 0f;
-            float distanceToWaypoint = directionToWaypoint.magnitude;
-
-            lineRenderers.UpdateLineRenderersForPath(localBody, currentWaypoint);
-
-            if (distanceToWaypoint < TARGET_PROXIMITY_THRESHOLD)
-            {
-                currentTaggingWaypointIndex++;
-                if (currentTaggingWaypointIndex >= taggingWaypoints.Count)
-                {
-                    var (targetTransform, _) = GetPlayerTransforms(taggedPlayer);
-                    if (targetTransform != null)
-                    {
-                        UpdateTaggingWaypoints(targetTransform.position);
-                    }
-                }
-                return;
-            }
-
-            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * directionToWaypoint.normalized;
-            StartMovement(localDirection);
-            TurnTowardsTargetPosition(localBody, currentWaypoint);
-        }
-        #endregion
         #region Hand
-        public void PerformHandGrounding(bool isLeftHand)
+        public void PerformHand(bool isLeftHand)
         {
-            StartCoroutine(HandGroundingRoutine(isLeftHand));
+            StartCoroutine(HandgRoutine(isLeftHand));
         }
-        private IEnumerator HandGroundingRoutine(bool isLeftHand)
+        private IEnumerator HandgRoutine(bool isLeftHand)
         {
             HandDriver hand = isLeftHand ? Rig.Instance.leftHand : Rig.Instance.rightHand;
             Transform body = Rig.Instance.body;
@@ -606,20 +447,20 @@ namespace WalkSimulator
 
             switch (activationPoint)
             {
-                case PlayerFollowerGUI.GroundingActivationPoint.OnReachGround:
+                case PlayerFollowerGUI.ActivationPoint.OnReachGround:
                     SetButtonState(hand, true);
                     yield return new WaitForSeconds(buttonHoldDuration);
                     SetButtonState(hand, false);
                     break;
 
-                case PlayerFollowerGUI.GroundingActivationPoint.MidHold:
+                case PlayerFollowerGUI.ActivationPoint.MidHold:
                     yield return new WaitForSeconds(buttonHoldDuration / 2);
                     SetButtonState(hand, true);
                     yield return new WaitForSeconds(buttonHoldDuration / 2);
                     SetButtonState(hand, false);
                     break;
 
-                case PlayerFollowerGUI.GroundingActivationPoint.OnRelease:
+                case PlayerFollowerGUI.ActivationPoint.OnRelease:
                     yield return new WaitForSeconds(buttonHoldDuration);
                     SetButtonState(hand, true);
                     break;
@@ -637,7 +478,7 @@ namespace WalkSimulator
 
             hand.transform.position = initialPosition;
 
-            if (activationPoint == PlayerFollowerGUI.GroundingActivationPoint.OnRelease)
+            if (activationPoint == PlayerFollowerGUI.ActivationPoint.OnRelease)
             {
                 SetButtonState(hand, false);
             }
@@ -972,7 +813,7 @@ namespace WalkSimulator
             Primary = 1 << 2, // 4
             Secondary = 1 << 3  // 8
         }
-        public enum GroundingActivationPoint { OnReachGround, MidHold, OnRelease }
+        public enum ActivationPoint { OnReachGround, MidHold, OnRelease }
         private bool isLeftHanded = true;
 
         public PlayerFollowerGUI(PlayerFollower follower)
@@ -1288,11 +1129,11 @@ namespace WalkSimulator
             GUILayout.EndVertical();
 
             GUILayout.BeginVertical(sectionStyle);
-            GUILayout.Label("Hand Grounding Settings", headerStyle);
+            GUILayout.Label("Hand Settings", headerStyle);
 
             GUILayout.Label("Activation Point:");
             GUILayout.BeginHorizontal();
-            foreach (GroundingActivationPoint point in Enum.GetValues(typeof(GroundingActivationPoint)))
+            foreach (ActivationPoint point in Enum.GetValues(typeof(ActivationPoint)))
             {
                 if (GUILayout.Toggle(follower.activationPoint == point, point.ToString()))
                 {
@@ -1336,9 +1177,9 @@ namespace WalkSimulator
             }
             GUILayout.EndHorizontal();
 
-            if (GUILayout.Button("Perform Hand Grounding"))
+            if (GUILayout.Button("Perform Hand"))
             {
-                follower.PerformHandGrounding(isLeftHanded);
+                follower.PerformHand(isLeftHanded);
             }
 
             GUILayout.EndVertical();
@@ -1565,5 +1406,169 @@ namespace WalkSimulator
             }
         }
         private const float MIN_DISTANCE_BETWEEN_POINTS = 0.1f;
+    }
+    public class Archived 
+    {
+        /*
+         * 
+        // Waypoints for Tagging & Following
+        private float lastWaypointUpdateTime = 0f;
+        private List<Vector3> followingWaypoints = new List<Vector3>();
+        private List<Vector3> taggingWaypoints = new List<Vector3>();
+        private int currentFollowingWaypointIndex = 0;
+        private int currentTaggingWaypointIndex = 0;
+         *         #region Tagging & Following With Waypoints
+        // idk why i made this
+        private void UpdateWaypoints()
+        {
+            if (followPlayerEnabled && currentPlayer != null)
+            {
+                var (targetTransform, _) = GetPlayerTransforms();
+                if (targetTransform != null)
+                {
+                    UpdateFollowingWaypoints(targetTransform.position);
+                }
+            }
+
+            if (isTagging && taggedPlayer != null)
+            {
+                var (targetTransform, _) = GetPlayerTransforms(taggedPlayer);
+                if (targetTransform != null)
+                {
+                    UpdateTaggingWaypoints(targetTransform.position);
+                }
+            }
+        }
+        private void UpdateFollowingWaypoints(Vector3 targetPosition)
+        {
+            Vector3 currentPosition = Rig.Instance.body.position;
+            followingWaypoints.Clear();
+
+            int numWaypoints = 3;
+            for (int i = 0; i <= numWaypoints; i++)
+            {
+                float t = i / (float)numWaypoints;
+                Vector3 waypoint = Vector3.Lerp(currentPosition, targetPosition, t);
+                if (i != 0 && i != numWaypoints)
+                {
+                    waypoint += new Vector3(
+                        UnityEngine.Random.Range(-0.5f, 0.5f),
+                        0,
+                        UnityEngine.Random.Range(-0.5f, 0.5f)
+                    );
+                }
+
+                followingWaypoints.Add(waypoint);
+            }
+
+            currentFollowingWaypointIndex = 0;
+        }
+        private void UpdateTaggingWaypoints(Vector3 targetPosition)
+        {
+            Vector3 currentPosition = Rig.Instance.body.position;
+            taggingWaypoints.Clear();
+
+            int numWaypoints = 2;
+            for (int i = 0; i <= numWaypoints; i++)
+            {
+                float t = i / (float)numWaypoints;
+                Vector3 waypoint = Vector3.Lerp(currentPosition, targetPosition, t);
+
+                if (i != 0 && i != numWaypoints)
+                {
+                    waypoint += new Vector3(
+                        UnityEngine.Random.Range(-0.3f, 0.3f),
+                        0,
+                        UnityEngine.Random.Range(-0.3f, 0.3f)
+                    );
+                }
+
+                taggingWaypoints.Add(waypoint);
+            }
+
+            currentTaggingWaypointIndex = 0;
+        }
+        private void MoveToTargetPlayerWithWaypoints()
+        {
+            Transform localBody = Rig.Instance.body;
+            if (localBody == null) return;
+
+            if (followingWaypoints.Count == 0)
+            {
+                var (targetTransform, _) = GetPlayerTransforms();
+                if (targetTransform != null)
+                {
+                    UpdateFollowingWaypoints(targetTransform.position);
+                }
+                return;
+            }
+
+            Vector3 currentWaypoint = followingWaypoints[currentFollowingWaypointIndex];
+            Vector3 directionToWaypoint = currentWaypoint - localBody.position;
+            directionToWaypoint.y = 0f;
+            float distanceToWaypoint = directionToWaypoint.magnitude;
+
+            lineRenderers.UpdateLineRenderersForPath(localBody, currentWaypoint);
+
+            if (distanceToWaypoint < TARGET_PROXIMITY_THRESHOLD)
+            {
+                currentFollowingWaypointIndex++;
+                if (currentFollowingWaypointIndex >= followingWaypoints.Count)
+                {
+                    var (targetTransform, _) = GetPlayerTransforms();
+                    if (targetTransform != null)
+                    {
+                        UpdateFollowingWaypoints(targetTransform.position);
+                    }
+                }
+                return;
+            }
+
+            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * directionToWaypoint.normalized;
+            StartMovement(localDirection);
+            TurnTowardsTargetPosition(localBody, currentWaypoint);
+        }
+        private void MoveToTaggedPlayerWithWaypoints()
+        {
+            Transform localBody = Rig.Instance.body;
+            if (localBody == null) return;
+
+            if (taggingWaypoints.Count == 0)
+            {
+                var (targetTransform, _) = GetPlayerTransforms(taggedPlayer);
+                if (targetTransform != null)
+                {
+                    UpdateTaggingWaypoints(targetTransform.position);
+                }
+                return;
+            }
+
+            Vector3 currentWaypoint = taggingWaypoints[currentTaggingWaypointIndex];
+            Vector3 directionToWaypoint = currentWaypoint - localBody.position;
+            directionToWaypoint.y = 0f;
+            float distanceToWaypoint = directionToWaypoint.magnitude;
+
+            lineRenderers.UpdateLineRenderersForPath(localBody, currentWaypoint);
+
+            if (distanceToWaypoint < TARGET_PROXIMITY_THRESHOLD)
+            {
+                currentTaggingWaypointIndex++;
+                if (currentTaggingWaypointIndex >= taggingWaypoints.Count)
+                {
+                    var (targetTransform, _) = GetPlayerTransforms(taggedPlayer);
+                    if (targetTransform != null)
+                    {
+                        UpdateTaggingWaypoints(targetTransform.position);
+                    }
+                }
+                return;
+            }
+
+            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * directionToWaypoint.normalized;
+            StartMovement(localDirection);
+            TurnTowardsTargetPosition(localBody, currentWaypoint);
+        }
+        #endregion
+        */
     }
 }
