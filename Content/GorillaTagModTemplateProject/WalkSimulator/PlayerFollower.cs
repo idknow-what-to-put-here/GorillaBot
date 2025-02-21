@@ -28,7 +28,7 @@ namespace WalkSimulator
         public bool followPlayerEnabled;
         public bool followPathEnabled;
         public Player currentPlayer;
-        private WalkAnimator walkAnimator;
+        public WalkAnimator walkAnimator;
         public ManualLogSource logger;
         public LineRenderers lineRenderers;
         private List<Vector3> pathPositions;
@@ -44,7 +44,9 @@ namespace WalkSimulator
 
         // Jump
         private bool isPreparingToJump = false;
-        private Vector3 jumpTarget;
+        public Vector3 jumpTarget;
+        public bool waitingForJumpStart = true;
+        public Vector3 jumpWaypointStart;
 
         // Tagging
         public bool isTagging = false;
@@ -582,20 +584,68 @@ namespace WalkSimulator
             if (walkAnimator != null)
             {
                 Vector3 currentPosition = transform.position;
-                float requiredHeight = jumpTarget.y - currentPosition.y;
+                walkAnimator.JumpPath(currentPosition, jumpTarget, walkAnimator.jumpAngleDegrees);
+                isPreparingToJump = false;
+            }
+        }
+        public List<Vector3> GenerateJumpArc(Vector3 start, Vector3 end, float jumpAngle)
+        {
+            List<Vector3> arcPoints = new List<Vector3>();
+            Vector3 startPos = start;
+            Vector3 endPos = end;
 
-                if (requiredHeight > 0)
+            Vector3 horizontalDisplacement = endPos - startPos;
+            horizontalDisplacement.y = 0f;
+            float D = horizontalDisplacement.magnitude;
+            float y = endPos.y - startPos.y;
+            float theta = jumpAngle * Mathf.Deg2Rad;
+            float cosTheta = Mathf.Cos(theta);
+            float sinTheta = Mathf.Sin(theta);
+            float g = Mathf.Abs(Physics.gravity.y);
+
+            float denominator = (D * Mathf.Tan(theta) - y);
+            int segments = 15;
+
+            if (denominator <= 0 || D < 0.1f)
+            {
+                float requiredHeight = Mathf.Max(0, y + 1f);
+                float jumpVelocity = Mathf.Sqrt(2 * g * requiredHeight);
+                float timeUp = jumpVelocity / g;
+                float totalTime = timeUp * 2;
+
+                for (int i = 0; i <= segments; i++)
                 {
-                    //logger.LogInfo($"Trying To Jump");
-                    Vector3 jumpDirection = jumpTarget - currentPosition;
-                    jumpDirection.y = 0;
-                    transform.rotation = Quaternion.LookRotation(jumpDirection);
+                    float t = i / (float)segments;
+                    float currentTime = t * totalTime;
+                    float verticalPosition = jumpVelocity * currentTime - 0.5f * g * currentTime * currentTime;
+                    Vector3 point = startPos + Vector3.up * verticalPosition;
 
-                    walkAnimator.JumpPath(requiredHeight);
-                    isPreparingToJump = false;
-                    //logger.LogInfo($"Jumped");
+                    if (D > 0.1f)
+                    {
+                        Vector3 horizontalDirection = horizontalDisplacement.normalized;
+                        point += horizontalDirection * (D * t);
+                    }
+                    arcPoints.Add(point);
                 }
             }
+            else
+            {
+                float v = Mathf.Sqrt((g * D * D) / (2 * cosTheta * cosTheta * denominator));
+                Vector3 direction = horizontalDisplacement.normalized;
+                float timeTotal = D / (v * cosTheta);
+
+                for (int i = 0; i <= segments; i++)
+                {
+                    float t = i / (float)segments;
+                    float currentTime = t * timeTotal;
+                    float x = v * cosTheta * currentTime;
+                    float currentY = v * sinTheta * currentTime - 0.5f * g * currentTime * currentTime;
+                    Vector3 point = startPos + direction * x + Vector3.up * currentY;
+                    arcPoints.Add(point);
+                }
+            }
+
+            return arcPoints;
         }
         #endregion
         public (Transform target, Transform local) GetPlayerTransforms(Player player)
@@ -1050,6 +1100,37 @@ namespace WalkSimulator
                 }
                 follower.lineRenderers.pathPositions.Add(newWaypoint);
                 follower.lineRenderers.UpdatePathLineRenderer();
+            }
+            if (GUILayout.Button(follower.waitingForJumpStart ? "Set Jump Start" : "Set Jump End"))
+            {
+                Transform localBody = Rig.Instance.body;
+                if (localBody == null) return;
+
+                if (follower.waitingForJumpStart)
+                {
+                    follower.jumpWaypointStart = localBody.position;
+                    follower.waitingForJumpStart = false;
+                    logMessages.Add("Jump start set: " + follower.jumpWaypointStart);
+                }
+                else
+                {
+                    Vector3 jumpWaypointEnd = localBody.position;
+                    follower.waitingForJumpStart = true;
+                    logMessages.Add("Jump end set: " + jumpWaypointEnd);
+
+                    float jumpAngle = follower.walkAnimator.jumpAngleDegrees;
+                    List<Vector3> jumpArc = follower.GenerateJumpArc(follower.jumpWaypointStart, jumpWaypointEnd, jumpAngle);
+
+                    int insertIndex = follower.lineRenderers.pathPositions.Count;
+                    follower.lineRenderers.pathPositions.InsertRange(insertIndex, jumpArc);
+                    follower.lineRenderers.UpdatePathLineRenderer();
+                }
+            }
+            if (GUILayout.Button("Clear Jump Points", GUILayout.Width(120)))
+            {
+                follower.waitingForJumpStart = true;
+                follower.jumpWaypointStart = Vector3.zero;
+                logMessages.Add("Jump points cleared");
             }
             if (GUILayout.Button("Remove Last Waypoint"))
             {

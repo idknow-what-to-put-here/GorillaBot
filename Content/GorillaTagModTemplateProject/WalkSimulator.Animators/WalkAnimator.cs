@@ -21,6 +21,9 @@ namespace WalkSimulator.Animators
         [SerializeField] private float raycastDistanceMultiplier = 0.5f;
         [SerializeField] private WalkAnimationMode animationMode = WalkAnimationMode.Short;
 
+        [Range(15f, 75f)] // works?
+        [SerializeField] public float jumpAngleDegrees = 45f;
+
         private float targetHeight;
         private bool hasJumped;
         private bool onJumpCooldown;
@@ -62,9 +65,8 @@ namespace WalkSimulator.Animators
             onJumpCooldown = true;
             jumpTime = Time.time;
             rig.active = false;
-            rigidbody.AddForce(Vector3.up * 235f * Player.Instance.scale, ForceMode.Impulse);
+            rigidbody.AddForce(Vector3.up * 225f * Player.Instance.scale, ForceMode.Impulse);
         }
-
         public void JumpPath(float requiredHeight)
         {
             hasJumped = true;
@@ -76,6 +78,45 @@ namespace WalkSimulator.Animators
             float jumpVelocity = Mathf.Sqrt(2 * gravity * requiredHeight);
 
             rigidbody.AddForce(Vector3.up * jumpVelocity * Player.Instance.scale, ForceMode.Impulse);
+        }
+        public void JumpPath(Vector3 start, Vector3 target, float jumpAngle = 45f)
+        {
+            hasJumped = true;
+            onJumpCooldown = true;
+            jumpTime = Time.time;
+            rig.active = false;
+
+            float g = Mathf.Abs(Physics.gravity.y);
+            Vector3 horizontalDisplacement = new Vector3(target.x - start.x, 0, target.z - start.z);
+            float D = horizontalDisplacement.magnitude;
+            float y = target.y - start.y;
+
+            jumpAngle = Mathf.Clamp(jumpAngle, 15f, 75f);
+            float theta = jumpAngle * Mathf.Deg2Rad;
+            float cosTheta = Mathf.Cos(theta);
+            float sinTheta = Mathf.Sin(theta);
+
+            if (D < 0.1f)
+            {
+                float jumpVelocity = Mathf.Sqrt(2 * g * Mathf.Max(1f, y));
+                rigidbody.AddForce(Vector3.up * jumpVelocity * Player.Instance.scale, ForceMode.Impulse);
+                return;
+            }
+
+            float denominator = (D * Mathf.Tan(theta) - y);
+            if (denominator <= 0)
+            {
+                float minAngle = Mathf.Atan((y + 0.1f) / D) * Mathf.Rad2Deg;
+                theta = Mathf.Clamp(minAngle, 15f, 75f) * Mathf.Deg2Rad;
+                cosTheta = Mathf.Cos(theta);
+                sinTheta = Mathf.Sin(theta);
+                denominator = (D * Mathf.Tan(theta) - y);
+            }
+
+            float v = Mathf.Sqrt((g * D * D) / (2 * cosTheta * cosTheta * denominator));
+            Vector3 jumpDir = horizontalDisplacement.normalized;
+            Vector3 initialVelocity = jumpDir * v * cosTheta + Vector3.up * v * sinTheta;
+            rigidbody.AddForce(initialVelocity * Player.Instance.scale, ForceMode.Impulse);
         }
 
         public void MoveBody()
