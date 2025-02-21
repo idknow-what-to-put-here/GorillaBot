@@ -65,7 +65,7 @@ namespace WalkSimulator
         public List<GameObject> activeObjects = new List<GameObject>();
         public float scanInterval = 100f;
         private float scanTimer = 0f;
-        public float avoidanceRadius = 2f;
+        public float avoidanceRadius = 5f;
         public LayerMask obstacleLayers = -1;
         private readonly string[] obstaclePaths = 
         {
@@ -408,7 +408,8 @@ namespace WalkSimulator
                 directionToTarget.y = 0f;
                 distanceToTarget = directionToTarget.magnitude;
             }
-            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * directionToTarget.normalized;
+            Vector3 finalDirection = avoidObjects ? AvoidObstacles(localBody.position, directionToTarget.normalized) : directionToTarget.normalized;
+            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * finalDirection;
             StartMovement(localDirection);
             TurnTowardsTargetPosition(localBody, targetPoint);
         }
@@ -681,37 +682,62 @@ namespace WalkSimulator
         }
         private Vector3 AvoidObstacles(Vector3 currentPosition, Vector3 desiredDirection)
         {
-            Vector3 avoidance = Vector3.zero;
+            Vector3 headPosition = Rig.Instance.head.position;
+            float forwardRayDistance = 4f;
+            float backwardRayDistance = 0.7f;
+            RaycastHit hit;
 
-            foreach (GameObject obstacle in activeObjects)
+            if (Physics.Raycast(headPosition, desiredDirection, out hit, forwardRayDistance, obstacleLayers))
             {
-                if (obstacle == null) continue;
-
-                Vector3 toObstacle = obstacle.transform.position - currentPosition;
-                float distance = toObstacle.magnitude;
-
-                if (distance < avoidanceRadius)
+                if (activeObjects.Contains(hit.collider.gameObject))
                 {
-                    Collider obstacleCollider = obstacle.GetComponent<Collider>();
-                    if (obstacleCollider == null) continue;
+                    Collider collider = hit.collider;
+                    Vector3 closestPoint = collider.ClosestPoint(headPosition);
+                    Vector3 avoidDirection = Vector3.Cross(desiredDirection, Vector3.up).normalized;
 
-                    Vector3 closestPoint = obstacleCollider.ClosestPoint(currentPosition);
-                    Vector3 avoidDir = currentPosition - closestPoint;
-                    float closestDistance = avoidDir.magnitude;
+                    Vector3 rightDir = (closestPoint + avoidDirection * 0.5f) - headPosition;
+                    Vector3 leftDir = (closestPoint - avoidDirection * 0.5f) - headPosition;
 
-                    if (closestDistance < avoidanceRadius)
+                    bool rightClear = !Physics.Raycast(headPosition, rightDir.normalized, 2f, obstacleLayers);
+                    bool leftClear = !Physics.Raycast(headPosition, leftDir.normalized, 2f, obstacleLayers);
+
+                    if (rightClear || !leftClear)
                     {
-                        float weight = (avoidanceRadius - closestDistance) / avoidanceRadius;
-                        avoidance += avoidDir.normalized * weight;
+                        return (desiredDirection + avoidDirection * 2f).normalized;
+                    }
+                    else
+                    {
+                        return (desiredDirection - avoidDirection * 2f).normalized;
                     }
                 }
             }
 
-            if (avoidance != Vector3.zero)
+            Vector3[] directions =
             {
-                avoidance.Normalize();
-                Vector3 blendedDirection = Vector3.Lerp(desiredDirection, avoidance, 0.7f);
-                return blendedDirection.normalized;
+                desiredDirection,
+                Quaternion.Euler(0, 45, 0) * desiredDirection,
+                Quaternion.Euler(0, -45, 0) * desiredDirection,
+                -desiredDirection
+            };
+
+            foreach (var dir in directions)
+            {
+                float rayDistance = dir == -desiredDirection ? backwardRayDistance : forwardRayDistance;
+
+                if (Physics.Raycast(headPosition, dir, out hit, rayDistance, obstacleLayers))
+                {
+                    if (activeObjects.Contains(hit.collider.gameObject))
+                    {
+                        Collider collider = hit.collider;
+                        Vector3 closestPoint = collider.ClosestPoint(headPosition);
+                        Vector3 avoidDirection = Vector3.Cross(dir, Vector3.up).normalized;
+
+                        Vector3 rightDir = (closestPoint + avoidDirection * 0.5f) - headPosition;
+                        Vector3 leftDir = (closestPoint - avoidDirection * 0.5f) - headPosition;
+
+                        return Vector3.Lerp(desiredDirection, desiredDirection + avoidDirection * 2f, 0.5f).normalized;
+                    }
+                }
             }
 
             return desiredDirection;
