@@ -424,9 +424,9 @@ namespace WalkSimulator
         #region Hand
         public void PerformHand(bool isLeftHand)
         {
-            StartCoroutine(HandgRoutine(isLeftHand));
+            StartCoroutine(HandRoutine(isLeftHand));
         }
-        private IEnumerator HandgRoutine(bool isLeftHand)
+        private IEnumerator HandRoutine(bool isLeftHand)
         {
             HandDriver hand = isLeftHand ? Rig.Instance.leftHand : Rig.Instance.rightHand;
             Transform body = Rig.Instance.body;
@@ -1112,7 +1112,7 @@ namespace WalkSimulator
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Flee Settings", headerStyle);
 
-            GUILayout.Label($"Flee Radius : {follower.FLEE_RADIUS:F1}s");
+            GUILayout.Label($"Flee Radius : {follower.FLEE_RADIUS:F1}");
             follower.FLEE_RADIUS = GUILayout.HorizontalSlider(follower.FLEE_RADIUS, 0.1f, 30f);
 
             bool newFleeEnabled = GUILayout.Toggle(follower.fleeEnabled, "Flee from Taggers");
