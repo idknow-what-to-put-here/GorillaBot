@@ -33,6 +33,7 @@ namespace WalkSimulator
                 flyAnimator = base.gameObject.GetOrAddComponent<FlyAnimator>();
                 handAnimator = base.gameObject.GetOrAddComponent<PoseAnimator>();
                 playerFollower = base.gameObject.GetOrAddComponent<PlayerFollower>();
+                playerFollower.DiscordWebhookUrl = Config.Bind("Logging", "DiscordWebhookUrl", "", "Discord webhook URL for sending logs");
                 if (!radialMenu)
                 {
                     radialMenu = UnityEngine.Object.Instantiate<GameObject>(bundle.LoadAsset<GameObject>("Radial Menu")).AddComponent<RadialMenu>();
