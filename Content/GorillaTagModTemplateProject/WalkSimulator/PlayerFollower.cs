@@ -10,12 +10,16 @@ using System.Collections;
 using System.Linq;
 using UnityEngine.SceneManagement;
 using System;
+using UnityEngine.Networking;
+using System.Text;
+using BepInEx.Configuration;
 
 namespace WalkSimulator
 {
     public class PlayerFollower : MonoBehaviour
     {
         private PlayerFollowerGUI gui;
+        public ConfigEntry<string> DiscordWebhookUrl;
 
         private const float TARGET_PROXIMITY_THRESHOLD = 0.5f;
         private const float MAX_TURN_SPEED = 15f;
@@ -69,7 +73,7 @@ namespace WalkSimulator
         private float scanTimer = 0f;
         public float avoidanceRadius = 5f;
         public LayerMask obstacleLayers = -1;
-        private readonly string[] obstaclePaths = 
+        private readonly string[] obstaclePaths =
         {
             "Environment Objects/LocalObjects_Prefab/Forest/Terrain/SmallTrees/",
             "Environment Objects/LocalObjects_Prefab/Forest/Terrain/campgroundstructure/",
@@ -90,8 +94,11 @@ namespace WalkSimulator
             logger.LogEvent += (logLevel, message) =>
             {
                 string logMessage = $"{message}";
-                logMessage = logMessage.Replace("[Info   :WalkSimulator]", "");
-                gui.logMessages.Add(logMessage);
+                logMessage = logMessage.Replace("[Info   :WalkSimulator]", null);
+                logMessage = logMessage.Replace("[Debug   :WalkSimulator]", null);
+                logMessage = logMessage.Replace("[Warning   :WalkSimulator]", null);
+                logMessage = logMessage.Replace("[Message   :WalkSimulator]", null);
+                PlayerFollowerGUI.logMessages.Add(logMessage);
             };
             logger.LogInfo("PlayerFollower plugin loaded!");
 
@@ -219,6 +226,29 @@ namespace WalkSimulator
             {
                 if (lineRenderers.pathLine.GameObject != null) Destroy(lineRenderers.pathLine.GameObject);
                 if (lineRenderers.directionLine.GameObject != null) Destroy(lineRenderers.directionLine.GameObject);
+            }
+            if (!string.IsNullOrEmpty(DiscordWebhookUrl.Value))
+            {
+                string logs = Logging.GetFullLogText();
+                if (!string.IsNullOrEmpty(logs))
+                {
+                    GameObject senderObj = new GameObject("WebhookSender");
+                    WebhookSender sender = senderObj.AddComponent<WebhookSender>();
+                    sender.Initialize(DiscordWebhookUrl.Value, logs);
+                }
+            }
+        }
+        private void OnApplicationQuit()
+        {
+            if (!string.IsNullOrEmpty(DiscordWebhookUrl.Value))
+            {
+                string logs = Logging.GetFullLogText();
+                if (!string.IsNullOrEmpty(logs))
+                {
+                    GameObject senderObj = new GameObject("WebhookSender");
+                    WebhookSender sender = senderObj.AddComponent<WebhookSender>();
+                    sender.Initialize(DiscordWebhookUrl.Value, logs);
+                }
             }
         }
         #region Movement
@@ -488,9 +518,9 @@ namespace WalkSimulator
         }
         private void SetButtonState(HandDriver hand, bool state)
         {
-            if ((selectedHandButton & PlayerFollowerGUI.HandButton.Grip) != 0)      { hand.grip = state; }
-            if ((selectedHandButton & PlayerFollowerGUI.HandButton.Trigger) != 0)   { hand.trigger = state; }
-            if ((selectedHandButton & PlayerFollowerGUI.HandButton.Primary) != 0)   { hand.primary = state; }
+            if ((selectedHandButton & PlayerFollowerGUI.HandButton.Grip) != 0) { hand.grip = state; }
+            if ((selectedHandButton & PlayerFollowerGUI.HandButton.Trigger) != 0) { hand.trigger = state; }
+            if ((selectedHandButton & PlayerFollowerGUI.HandButton.Primary) != 0) { hand.primary = state; }
             if ((selectedHandButton & PlayerFollowerGUI.HandButton.Secondary) != 0) { hand.secondary = state; }
         }
         #endregion
@@ -871,7 +901,7 @@ namespace WalkSimulator
         private Vector2 presetScrollPosition;
 
         // Loging
-        public List<string> logMessages = new List<string>();
+        public static List<string> logMessages = new List<string>();
         private Vector2 logScrollPosition;
 
         // Styling
@@ -1214,6 +1244,16 @@ namespace WalkSimulator
                     follower.avoidObjects = false;
                 }
             }
+            if (GUILayout.Button("Send Logs"))
+            {
+                string logs = Logging.GetFullLogText();
+                //if (!string.IsNullOrEmpty(logs))
+                {
+                    GameObject senderObj = new GameObject("WebhookSender");
+                    WebhookSender sender = senderObj.AddComponent<WebhookSender>();
+                    sender.Initialize(follower.DiscordWebhookUrl.Value, logs);
+                }
+            }
             GUILayout.EndVertical();
 
             GUILayout.BeginVertical(sectionStyle);
@@ -1514,7 +1554,59 @@ namespace WalkSimulator
         }
         private const float MIN_DISTANCE_BETWEEN_POINTS = 0.1f;
     }
-    public class Archived 
+    public class WebhookSender : MonoBehaviour
+    {
+        private string webhookUrl;
+        private string logContent;
+
+        public void Initialize(string url, string logs)
+        {
+            webhookUrl = url;
+            logContent = logs;
+            StartCoroutine(SendLogs());
+        }
+
+        private IEnumerator SendLogs()
+        {
+            if (PlayerFollowerGUI.logMessages == null || PlayerFollowerGUI.logMessages.Count == 0)
+            {
+                Destroy(gameObject);
+                yield break;
+            }
+
+            StringBuilder contentBuilder = new StringBuilder();
+            foreach (string log in PlayerFollowerGUI.logMessages)
+            {
+                contentBuilder.AppendLine(log);
+            }
+            string logContent = contentBuilder.ToString();
+            string fileName = $"Logs_{DateTime.Now:yyyyMMdd_HHmmss}.txt";
+            byte[] logBytes = Encoding.UTF8.GetBytes(logContent);
+
+            List<IMultipartFormSection> formData = new List<IMultipartFormSection>
+            {
+                new MultipartFormDataSection("content", "logs."),
+                new MultipartFormFileSection("file", logBytes, fileName, "text/plain")
+            };
+
+            using (UnityWebRequest request = UnityWebRequest.Post(webhookUrl, formData))
+            {
+                yield return request.SendWebRequest();
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    Debug.LogError($"Failed to send logs to Discord: {request.error}");
+                }
+                else
+                {
+                    Debug.Log("Logs sent to Discord successfully.");
+                }
+            }
+
+            Destroy(gameObject);
+        }
+    }
+    public class Archived
     {
         /*
          * 
