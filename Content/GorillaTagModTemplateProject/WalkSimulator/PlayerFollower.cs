@@ -13,6 +13,7 @@ using System;
 using UnityEngine.Networking;
 using System.Text;
 using BepInEx.Configuration;
+using static WalkSimulator.PlayerFollower;
 
 namespace WalkSimulator
 {
@@ -123,6 +124,7 @@ namespace WalkSimulator
             lineRenderers.Initialize("PathLine", "DirectionLine", pathColor, directionColor, lineAlpha, pathLineWidth, directionLineWidth);
 
             pathPositions = new List<Vector3>();
+            InitializeHardcodedPresets();
         }
         public void ScanActiveObjects()
         {
@@ -227,6 +229,7 @@ namespace WalkSimulator
                 if (lineRenderers.pathLine.GameObject != null) Destroy(lineRenderers.pathLine.GameObject);
                 if (lineRenderers.directionLine.GameObject != null) Destroy(lineRenderers.directionLine.GameObject);
             }
+            /*
             if (!string.IsNullOrEmpty(DiscordWebhookUrl.Value))
             {
                 string logs = Logging.GetFullLogText();
@@ -237,6 +240,7 @@ namespace WalkSimulator
                     sender.Initialize(DiscordWebhookUrl.Value, logs);
                 }
             }
+            */
         }
         private void OnApplicationQuit()
         {
@@ -390,7 +394,7 @@ namespace WalkSimulator
         }
         private void MoveToTargetPlayer()
         {
-            var (targetTransform, localBody) = GetPlayerTransforms();
+            var (targetTransform, localBody) = GetPlayerTransforms(currentPlayer);
             if (targetTransform == null || localBody == null) return;
             lineRenderers.UpdateLineRenderers(localBody, targetTransform);
             UpdateMovement(localBody, targetTransform);
@@ -698,10 +702,6 @@ namespace WalkSimulator
 
             return (targetRigObj.transform, localBody);
         }
-        public (Transform target, Transform local) GetPlayerTransforms()
-        {
-            return GetPlayerTransforms(currentPlayer);
-        }
         public void TurnTowardsTarget(Transform targetTransform, Transform localBody)
         {
             Vector3 targetDirection = targetTransform.position - localBody.position;
@@ -829,6 +829,17 @@ namespace WalkSimulator
         {
             public List<Vector3> waypoints;
         }
+        public class PathPreset
+        {
+            public string Name { get; set; }
+            public List<Vector3> Waypoints { get; set; }
+
+            public PathPreset(string name, List<Vector3> waypoints)
+            {
+                Name = name;
+                Waypoints = new List<Vector3>(waypoints);
+            }
+        }
         private string GetPresetDirectory()
         {
             return Path.Combine(BepInEx.Paths.GameRootPath, "PlayerFollower");
@@ -867,6 +878,213 @@ namespace WalkSimulator
             if (!Directory.Exists(presetDir)) { Directory.CreateDirectory(presetDir); }
             gui.presetFiles = Directory.GetFiles(presetDir, "*.json");
         }
+        public void LoadHardcodedPreset(string presetName)
+        {
+            if (gui.hardcodedPresets.TryGetValue(presetName, out PathPreset preset))
+            {
+                lineRenderers.pathPositions = new List<Vector3>(preset.Waypoints);
+                lineRenderers.UpdatePathLineRenderer();
+                logger.LogInfo($"Loaded hardcoded preset: {presetName}");
+            }
+            else
+            {
+                logger.LogWarning($"Hardcoded preset not found: {presetName}");
+            }
+        }
+        public string GeneratePresetCode(string presetName)
+        {
+            string filePath = Path.Combine(GetPresetDirectory(), presetName + ".json");
+            if (!File.Exists(filePath))
+            {
+                logger.LogWarning($"Preset file not found: {filePath}");
+                return null;
+            }
+
+            string json = File.ReadAllText(filePath);
+            PathData data = JsonUtility.FromJson<PathData>(json);
+
+            if (data == null || data.waypoints == null || data.waypoints.Count == 0)
+            {
+                logger.LogWarning($"Invalid or empty preset data in file: {filePath}");
+                return null;
+            }
+
+            StringBuilder codeBuilder = new StringBuilder();
+            codeBuilder.AppendLine($"// Generated code for preset: {presetName}");
+            codeBuilder.AppendLine("{");
+            codeBuilder.AppendLine($"    \"{presetName}\",");
+            codeBuilder.AppendLine($"    new PathPreset(\"{presetName}\", new List<Vector3>");
+            codeBuilder.AppendLine("    {");
+
+            foreach (Vector3 waypoint in data.waypoints)
+            {
+                codeBuilder.AppendLine($"        new Vector3({waypoint.x}f, {waypoint.y}f, {waypoint.z}f),");
+            }
+
+            codeBuilder.AppendLine("    })");
+            codeBuilder.AppendLine("},");
+
+            return codeBuilder.ToString();
+        }
+        public string GenerateAllPresetsCode()
+        {
+            StringBuilder fullCodeBuilder = new StringBuilder();
+            fullCodeBuilder.AppendLine("// Generated code for all presets");
+            fullCodeBuilder.AppendLine("hardcodedPresets = new Dictionary<string, PathPreset>");
+            fullCodeBuilder.AppendLine("{");
+
+            string presetDir = GetPresetDirectory();
+            if (!Directory.Exists(presetDir))
+            {
+                logger.LogWarning("Preset directory not found");
+                return null;
+            }
+
+            string[] presetFiles = Directory.GetFiles(presetDir, "*.json");
+            foreach (string filePath in presetFiles)
+            {
+                string presetName = Path.GetFileNameWithoutExtension(filePath);
+                string presetCode = GeneratePresetCode(presetName);
+                if (presetCode != null)
+                {
+                    fullCodeBuilder.Append(presetCode);
+                }
+            }
+
+            fullCodeBuilder.AppendLine("};");
+
+            string codeFilePath = Path.Combine(presetDir, "GeneratedPresetCode.cs");
+            File.WriteAllText(codeFilePath, fullCodeBuilder.ToString());
+            logger.LogInfo($"Generated code saved to: {codeFilePath}");
+
+            return fullCodeBuilder.ToString();
+        }
+        private void InitializeHardcodedPresets()
+        {
+            /*
+            gui.hardcodedPresets = new Dictionary<string, PathPreset>
+            {
+                {
+                    "test",
+                    new PathPreset("test", new List<Vector3>
+                    {
+                        new Vector3(10f, 0f, 10f),
+                        new Vector3(20f, 0f, 10f),
+                        new Vector3(20f, 0f, 20f),
+                        new Vector3(10f, 0f, 20f)
+                    })
+                },
+            };
+            */
+            gui.hardcodedPresets = new Dictionary<string, PathPreset>
+            {
+                {
+                    "GoToComputerRoomMain",
+                    new PathPreset("GoToComputerRoomMain", new List<Vector3>
+                    {
+                        new Vector3(-72.35487f, 2.560988f, -79.96801f),
+                        new Vector3(-71.72959f, 2.759356f, -79.41348f),
+                        new Vector3(-70.8455f, 3.543792f, -78.74522f),
+                        new Vector3(-70.10481f, 3.90039f, -78.35027f),
+                        new Vector3(-69.17955f, 4.408913f, -78.16763f),
+                        new Vector3(-68.50964f, 4.774348f, -78.00622f),
+                        new Vector3(-67.88614f, 5.118788f, -77.99005f),
+                        new Vector3(-67.03764f, 5.601111f, -77.89817f),
+                        new Vector3(-66.18839f, 6.079124f, -77.80872f),
+                        new Vector3(-65.59859f, 6.497375f, -77.6417f),
+                        new Vector3(-64.80223f, 6.916295f, -78.01163f),
+                        new Vector3(-63.74372f, 7.543442f, -78.52428f),
+                        new Vector3(-62.82769f, 8.07548f, -79.17905f),
+                        new Vector3(-61.8376f, 8.526892f, -79.95563f),
+                        new Vector3(-61.56931f, 8.726213f, -80.31889f),
+                        new Vector3(-61.29178f, 8.992293f, -81.18191f),
+                        new Vector3(-60.82226f, 9.15828f, -81.49084f),
+                        new Vector3(-60.68061f, 9.035937f, -81.14237f),
+                        new Vector3(-60.89326f, 9.000212f, -80.95354f),
+                        new Vector3(-61.27353f, 8.901952f, -80.49393f),
+                        new Vector3(-61.76406f, 9.912112f, -80.32779f),
+                        new Vector3(-62.04436f, 10.41658f, -80.22958f),
+                        new Vector3(-62.28139f, 10.46475f, -80.14656f),
+                        new Vector3(-62.77595f, 10.32142f, -79.8379f),
+                        new Vector3(-63.18159f, 10.30063f, -79.14884f),
+                    })
+                },
+                {
+                    "GoToComputerRoomMain2",
+                    new PathPreset("GoToComputerRoomMain2", new List<Vector3>
+                    {
+                        new Vector3(-72.35487f, 2.560988f, -79.96801f),
+                        new Vector3(-71.72959f, 2.759356f, -79.41348f),
+                        new Vector3(-70.8455f, 3.543792f, -78.74522f),
+                        new Vector3(-70.10481f, 3.90039f, -78.35027f),
+                        new Vector3(-69.17955f, 4.408913f, -78.16763f),
+                        new Vector3(-68.50964f, 4.774348f, -78.00622f),
+                        new Vector3(-67.88614f, 5.118788f, -77.99005f),
+                        new Vector3(-67.03764f, 5.601111f, -77.89817f),
+                        new Vector3(-66.18839f, 6.079124f, -77.80872f),
+                        new Vector3(-65.59859f, 6.497375f, -77.6417f),
+                        new Vector3(-64.80223f, 6.916295f, -78.01163f),
+                        new Vector3(-63.74372f, 7.543442f, -78.52428f),
+                        new Vector3(-62.82769f, 8.07548f, -79.17905f),
+                        new Vector3(-61.8376f, 8.526892f, -79.95563f),
+                        new Vector3(-61.56931f, 8.726213f, -80.31889f),
+                        new Vector3(-61.29178f, 8.992293f, -81.18191f),
+                        new Vector3(-60.82226f, 9.15828f, -81.49084f),
+                        new Vector3(-60.68061f, 9.035937f, -81.14237f),
+                        new Vector3(-60.89326f, 9.000212f, -80.95354f),
+                        new Vector3(-61.27353f, 8.901952f, -80.49393f),
+                        new Vector3(-61.76406f, 9.912112f, -80.32779f),
+                        new Vector3(-62.04436f, 10.41658f, -80.22958f),
+                        new Vector3(-62.28139f, 10.46475f, -80.14656f),
+                        new Vector3(-62.77595f, 10.32142f, -79.8379f),
+                        new Vector3(-63.18159f, 10.30063f, -79.14884f),
+                        new Vector3(-63.81387f, 10.55995f, -78.89856f),
+                        new Vector3(-65.01719f, 11.24964f, -78.40349f),
+                        new Vector3(-65.71024f, 11.6533f, -78.54861f),
+                        new Vector3(-66.68946f, 11.65255f, -78.89753f),
+                        new Vector3(-66.81215f, 11.97877f, -79.1282f),
+                        new Vector3(-66.65028f, 11.87572f, -79.81818f),
+                        new Vector3(-66.46368f, 11.76486f, -80.35046f),
+                        new Vector3(-66.37151f, 11.72333f, -80.68318f),
+                    })
+                },
+                {
+                    "GoToPlatformMain",
+                    new PathPreset("GoToPlatformMain", new List<Vector3>
+                    {
+                        new Vector3(-56.02302f, 2.381461f, -85.00444f),
+                        new Vector3(-55.38683f, 2.677924f, -84.37441f),
+                        new Vector3(-54.26675f, 3.527431f, -83.40524f),
+                        new Vector3(-52.69836f, 4.619273f, -82.34782f),
+                        new Vector3(-52.17909f, 4.953619f, -82.08039f),
+                        new Vector3(-51.61621f, 5.327015f, -81.75504f),
+                        new Vector3(-50.50991f, 6.063376f, -81.11749f),
+                        new Vector3(-49.42637f, 6.822853f, -80.36471f),
+                        new Vector3(-48.79836f, 7.242524f, -80.00304f),
+                        new Vector3(-48.34003f, 9.453851f, -79.73903f),
+                        new Vector3(-47.33639f, 9.142305f, -79.16099f),
+                        new Vector3(-46.53186f, 7.470709f, -78.681f),
+                        new Vector3(-46.29971f, 7.393697f, -78.12136f),
+                        new Vector3(-46.01013f, 7.386148f, -77.11805f),
+                        new Vector3(-45.75963f, 7.388598f, -76.76421f),
+                        new Vector3(-45.87177f, 7.390213f, -76.38636f),
+                        new Vector3(-46.06187f, 8.231427f, -74.52164f),
+                        new Vector3(-46.28636f, 8.711465f, -73.8747f),
+                        new Vector3(-46.48201f, 9.363704f, -72.9858f),
+                        new Vector3(-46.82495f, 10.077f, -72.0348f),
+                        new Vector3(-47.12182f, 10.69032f, -71.21152f),
+                        new Vector3(-47.38946f, 11.3769f, -70.29014f),
+                        new Vector3(-47.7004f, 12.0322f, -69.42803f),
+                        new Vector3(-48.05209f, 12.76431f, -68.4529f),
+                        new Vector3(-48.16179f, 13.32679f, -67.66391f),
+                        new Vector3(-47.6621f, 13.44138f, -67.3676f),
+                        new Vector3(-47.19476f, 13.83556f, -66.68616f),
+                        new Vector3(-47.40697f, 14.11036f, -65.27734f),
+                        new Vector3(-48.86796f, 14.10696f, -64.1051f),
+                    })
+                },
+            };
+        }
         #endregion
     }
     public class PlayerFollowerGUI : MonoBehaviour
@@ -881,6 +1099,7 @@ namespace WalkSimulator
         private bool showColorPicker = false;
         private bool editingPathColor = true;
         private Vector2 scrollPosition;
+        private bool showPresetManager = false;
 
         // Preset colors
         private readonly Color[] colorPresets = new Color[]
@@ -899,6 +1118,10 @@ namespace WalkSimulator
         private string presetName = "DefaultPreset";
         public string[] presetFiles;
         private Vector2 presetScrollPosition;
+        private Rect presetWindowRect = new Rect(100, 100, 400, 500);
+        private Vector2 hardcodedPresetScrollPosition = Vector2.zero;
+        public Dictionary<string, PathPreset> hardcodedPresets;
+        public IEnumerable<string> HardcodedPresetNames => hardcodedPresets.Keys;
 
         // Loging
         public static List<string> logMessages = new List<string>();
@@ -966,6 +1189,11 @@ namespace WalkSimulator
                     COLOR_PICKER_SIZE
                 );
                 GUILayout.Window(1, colorPickerRect, DrawColorPicker, "Color Picker");
+            }
+
+            if (showPresetManager)
+            {
+                presetWindowRect = GUILayout.Window(2, presetWindowRect, DrawPresetManagerWindow, "Preset Manager", GUI.skin.window);
             }
         }
         private void DrawWindow(int windowID)
@@ -1108,68 +1336,84 @@ namespace WalkSimulator
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Path Destinations", headerStyle);
 
-            if (GUILayout.Button("Add Current Position Waypoint"))
+            Transform GetLocalBody()
             {
-                Transform localBody = Rig.Instance.body;
-                if (localBody == null) return;
-                follower.lineRenderers.pathPositions.Add(localBody.position);
+                Transform body = Rig.Instance.body;
+                return body;
+            }
+            void AddPointAndUpdate(Vector3 point)
+            {
+                follower.lineRenderers.pathPositions.Add(point);
                 follower.lineRenderers.UpdatePathLineRenderer();
             }
+
+            if (GUILayout.Button("Add Current Position Waypoint"))
+            {
+                Transform localBody = GetLocalBody();
+                if (localBody == null) return;
+                AddPointAndUpdate(localBody.position);
+            }
+
             if (GUILayout.Button("Add Forward Waypoint"))
             {
-                Transform localBody = Rig.Instance.body;
+                Transform localBody = GetLocalBody();
                 if (localBody == null) return;
+
                 Vector3 newWaypoint;
-                if (follower.lineRenderers.pathPositions.Count == 0)
+                int count = follower.lineRenderers.pathPositions.Count;
+                if (count == 0)
                 {
                     newWaypoint = localBody.position + localBody.forward * 2f;
                 }
                 else
                 {
-                    newWaypoint = follower.lineRenderers.pathPositions[follower.lineRenderers.pathPositions.Count - 1] + localBody.forward * 2f;
+                    newWaypoint = follower.lineRenderers.pathPositions[count - 1] + localBody.forward * 2f;
                 }
-                follower.lineRenderers.pathPositions.Add(newWaypoint);
-                follower.lineRenderers.UpdatePathLineRenderer();
+                AddPointAndUpdate(newWaypoint);
             }
+
             if (GUILayout.Button(follower.waitingForJumpStart ? "Set Jump Start" : "Set Jump End"))
             {
-                Transform localBody = Rig.Instance.body;
+                Transform localBody = GetLocalBody();
                 if (localBody == null) return;
 
                 if (follower.waitingForJumpStart)
                 {
                     follower.jumpWaypointStart = localBody.position;
                     follower.waitingForJumpStart = false;
-                    logMessages.Add("Jump start set: " + follower.jumpWaypointStart);
+                    follower.logger.LogInfo("Jump start set: " + follower.jumpWaypointStart);
                 }
                 else
                 {
                     Vector3 jumpWaypointEnd = localBody.position;
                     follower.waitingForJumpStart = true;
-                    logMessages.Add("Jump end set: " + jumpWaypointEnd);
+                    follower.logger.LogInfo("Jump end set: " + jumpWaypointEnd);
 
                     float jumpAngle = follower.walkAnimator.jumpAngleDegrees;
                     List<Vector3> jumpArc = follower.GenerateJumpArc(follower.jumpWaypointStart, jumpWaypointEnd, jumpAngle);
 
-                    int insertIndex = follower.lineRenderers.pathPositions.Count;
-                    follower.lineRenderers.pathPositions.InsertRange(insertIndex, jumpArc);
+                    follower.lineRenderers.pathPositions.AddRange(jumpArc);
                     follower.lineRenderers.UpdatePathLineRenderer();
                 }
             }
+
             if (GUILayout.Button("Clear Jump Points", GUILayout.Width(120)))
             {
                 follower.waitingForJumpStart = true;
                 follower.jumpWaypointStart = Vector3.zero;
-                logMessages.Add("Jump points cleared");
+                follower.logger.LogInfo("Jump points cleared");
             }
+
             if (GUILayout.Button("Remove Last Waypoint"))
             {
-                if (follower.lineRenderers.pathPositions.Count > 0)
+                var positions = follower.lineRenderers.pathPositions;
+                if (positions.Count > 0)
                 {
-                    follower.lineRenderers.pathPositions.RemoveAt(follower.lineRenderers.pathPositions.Count - 1);
+                    positions.RemoveAt(positions.Count - 1);
                     follower.lineRenderers.UpdatePathLineRenderer();
                 }
             }
+
             if (GUILayout.Button("Start Path Following"))
             {
                 if (follower.lineRenderers.pathPositions.Count > 0)
@@ -1177,13 +1421,24 @@ namespace WalkSimulator
                     follower.followPathEnabled = true;
                 }
             }
+
             if (GUILayout.Button("Stop Path Following"))
             {
                 follower.StopPathing();
             }
 
             GUILayout.Space(10);
+            if (GUILayout.Button("Open Preset Manager"))
+            {
+                showPresetManager = true;
+            }
+            GUILayout.EndVertical();
+        }
+        private void DrawPresetManagerWindow(int windowID)
+        {
+            GUILayout.BeginVertical();
             GUILayout.Label("Preset Management", headerStyle);
+
             GUILayout.BeginHorizontal();
             GUILayout.Label("Preset Name:", GUILayout.Width(80));
             presetName = GUILayout.TextField(presetName);
@@ -1198,28 +1453,83 @@ namespace WalkSimulator
                 follower.RefreshPresetFiles();
             }
 
-            GUILayout.Label("Available Presets:");
-            presetScrollPosition = GUILayout.BeginScrollView(presetScrollPosition, GUILayout.Height(100));
-            if (presetFiles != null && presetFiles.Length > 0)
+            GUILayout.Space(10);
+
+            GUILayout.BeginHorizontal();
             {
-                foreach (string presetFile in presetFiles)
+                GUILayout.BeginVertical(GUILayout.Width(180));
+                GUILayout.Label("Available Presets:", headerStyle);
+                presetScrollPosition = GUILayout.BeginScrollView(presetScrollPosition, GUILayout.Height(150));
+                if (presetFiles != null && presetFiles.Length > 0)
                 {
-                    string fileName = Path.GetFileNameWithoutExtension(presetFile);
-                    GUILayout.BeginHorizontal();
-                    GUILayout.Label(fileName);
-                    if (GUILayout.Button("Load", GUILayout.Width(60)))
+                    foreach (string presetFile in presetFiles)
                     {
-                        follower.LoadPreset(fileName);
+                        string fileName = Path.GetFileNameWithoutExtension(presetFile);
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label(fileName);
+                        if (GUILayout.Button("Load", GUILayout.Width(60)))
+                        {
+                            follower.LoadPreset(fileName);
+                        }
+                        GUILayout.EndHorizontal();
                     }
-                    GUILayout.EndHorizontal();
+                }
+                else
+                {
+                    GUILayout.Label("No presets found.");
+                }
+                GUILayout.EndScrollView();
+                GUILayout.EndVertical();
+
+                GUILayout.BeginVertical(GUILayout.Width(180));
+                GUILayout.Label("Hardcoded Presets:", headerStyle);
+                hardcodedPresetScrollPosition = GUILayout.BeginScrollView(hardcodedPresetScrollPosition, GUILayout.Height(150));
+                if (HardcodedPresetNames != null)
+                {
+                    foreach (string hardcodedPreset in HardcodedPresetNames)
+                    {
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label(hardcodedPreset);
+                        if (GUILayout.Button("Load", GUILayout.Width(60)))
+                        {
+                            follower.LoadHardcodedPreset(hardcodedPreset);
+                        }
+                        GUILayout.EndHorizontal();
+                    }
+                }
+                else
+                {
+                    GUILayout.Label("No hardcoded presets found.");
+                }
+                GUILayout.EndScrollView();
+                GUILayout.EndVertical();
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(10);
+            GUILayout.Label("Code Generation", headerStyle);
+            if (GUILayout.Button("Generate Hardcoded Preset Code"))
+            {
+                string generatedCode = follower.GenerateAllPresetsCode();
+                if (!string.IsNullOrEmpty(generatedCode))
+                {
+                    GUIUtility.systemCopyBuffer = generatedCode;
+                    follower.logger.LogInfo("Generated preset code and copied to clipboard!");
+                    follower.logger.LogInfo("Also saved to GeneratedPresetCode.cs in the preset directory");
+                }
+                else
+                {
+                    follower.logger.LogError("Failed to generate preset code. Check the logs for details.");
                 }
             }
-            else
+
+            if (GUILayout.Button("Close Preset Manager"))
             {
-                GUILayout.Label("No presets found.");
+                showPresetManager = false;
             }
-            GUILayout.EndScrollView();
+
             GUILayout.EndVertical();
+            GUI.DragWindow();
         }
         private void DrawMisc()
         {
