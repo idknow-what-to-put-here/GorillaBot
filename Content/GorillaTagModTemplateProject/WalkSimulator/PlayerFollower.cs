@@ -1604,7 +1604,7 @@ namespace WalkSimulator
             }
             if (GUILayout.Button("Save Recording"))
             {
-                follower.movementRecorder.SaveRecording("myRecording");
+                follower.movementRecorder.SaveRecording("myRecording.json");
             }
 
             GUILayout.EndVertical();
@@ -1800,7 +1800,6 @@ namespace WalkSimulator
     }
     public class MovementRecorder : MonoBehaviour
     {
-
         [Serializable]
         public class FrameData
         {
@@ -1813,10 +1812,11 @@ namespace WalkSimulator
             public SerializableQuaternion leftHandRotation;
             public SerializableVector3 rightHandPosition;
             public SerializableQuaternion rightHandRotation;
-            public List<BoneData> bones;
+            //public List<BoneData> bones;
             public SerializableVector3 inputDirection;
         }
 
+        /*
         [Serializable]
         public class BoneData
         {
@@ -1824,7 +1824,7 @@ namespace WalkSimulator
             public SerializableVector3 position;
             public SerializableQuaternion rotation;
         }
-
+        */
         [Serializable]
         public struct SerializableVector3
         {
@@ -1862,7 +1862,6 @@ namespace WalkSimulator
             }
         }
 
-
         private List<FrameData> recordedFrames = new List<FrameData>();
         private float recordingStartTime;
         public bool isRecording = false;
@@ -1873,11 +1872,23 @@ namespace WalkSimulator
         private PlayerFollower follower;
         private Transform virtualTargetTransform;
         private List<Behaviour> trackingComponents = new List<Behaviour>(); // idk what this is lol chatgpt helped me
+
         public MovementRecorder(PlayerFollower follower)
         {
             this.follower = follower;
             GameObject virtualTarget = new GameObject("VirtualReplayTarget");
             virtualTargetTransform = virtualTarget.transform;
+        }
+        public void FixedUpdate()
+        {
+            if (isRecording)
+            {
+                RecordFrame();
+            }
+            else if (isReplaying)
+            {
+                ReplayFrame();
+            }
         }
         public void StartRecording()
         {
@@ -1888,13 +1899,13 @@ namespace WalkSimulator
             isRecording = true;
             follower.logger.LogInfo("Started recording movement");
         }
-
         public void StopRecording()
         {
             if (!isRecording) return;
 
             isRecording = false;
             follower.logger.LogInfo($"Stopped recording. Captured {recordedFrames.Count} frames");
+            SaveRecording("recording.json");
         }
         public void StartReplay()
         {
@@ -1906,8 +1917,6 @@ namespace WalkSimulator
                 driver.enabled = false;
                 trackingComponents.Add(driver);
             }
-
-            SaveRecording("test2");
 
             FrameData startingFrame = recordedFrames[0];
 
@@ -1922,6 +1931,7 @@ namespace WalkSimulator
             Rig.Instance.rightHand.transform.position = startingFrame.rightHandPosition.ToVector3();
             Rig.Instance.rightHand.transform.rotation = startingFrame.rightHandRotation.ToQuaternion();
 
+            /*
             foreach (VRRig vrrig in GorillaParent.instance.vrrigs)
             {
                 if (vrrig == GorillaTagger.Instance.offlineVRRig)
@@ -1935,7 +1945,7 @@ namespace WalkSimulator
                     break;
                 }
             }
-
+            */
             isReplaying = true;
             currentReplayFrame = 1;
             replayStartTime = Time.time;
@@ -1944,7 +1954,6 @@ namespace WalkSimulator
             follower.StopFollowing();
             follower.followPlayerEnabled = true;
         }
-
         public void StopReplay()
         {
             if (!isReplaying) return;
@@ -1957,19 +1966,6 @@ namespace WalkSimulator
             follower.StopFollowing();
             follower.logger.LogInfo("Stopped replay");
         }
-
-        public void FixedUpdate()
-        {
-            if (isRecording)
-            {
-                RecordFrame();
-            }
-            else if (isReplaying)
-            {
-                ReplayFrame();
-            }
-        }
-
         private void RecordFrame()
         {
             var frame = new FrameData
@@ -1984,9 +1980,10 @@ namespace WalkSimulator
                 rightHandPosition = new SerializableVector3(Rig.Instance.rightHand.transform.position),
                 rightHandRotation = new SerializableQuaternion(Rig.Instance.rightHand.transform.rotation),
                 inputDirection = new SerializableVector3(InputHandler.inputDirectionNoY),
-                bones = new List<BoneData>()
+                //bones = new List<BoneData>()
             };
 
+            /*
             foreach (VRRig vrrig in GorillaParent.instance.vrrigs)
             {
                 if (vrrig == GorillaTagger.Instance.offlineVRRig)
@@ -2004,10 +2001,9 @@ namespace WalkSimulator
                     break;
                 }
             }
-
+            */
             recordedFrames.Add(frame);
         }
-
         private void ReplayFrame()
         {
             if (currentReplayFrame >= recordedFrames.Count)
@@ -2015,7 +2011,6 @@ namespace WalkSimulator
                 StopReplay();
                 return;
             }
-            SaveRecording("test");
             float currentTime = Time.time - replayStartTime;
             var frame = recordedFrames[currentReplayFrame];
 
@@ -2036,6 +2031,7 @@ namespace WalkSimulator
                 Rig.Instance.head.position = frame.headPosition.ToVector3();
                 Rig.Instance.head.rotation = frame.headRotation.ToQuaternion();
 
+                /*
                 foreach (VRRig vrrig in GorillaParent.instance.vrrigs)
                 {
                     if (vrrig == GorillaTagger.Instance.offlineVRRig)
@@ -2049,42 +2045,16 @@ namespace WalkSimulator
                         break;
                     }
                 }
-
+                */
                 currentReplayFrame++;
             }
         }
-        public void SaveRecording(string filename)
+        public void SaveRecording(string fileName)
         {
-            if (recordedFrames.Count == 0)
-            {
-                follower.logger.LogInfo("No recording to save");
-                return;
-            }
-
-            string json = JsonUtility.ToJson(recordedFrames);
-            string path = Path.Combine(Application.persistentDataPath, $"{filename}.json");
+            string json = JsonUtility.ToJson(recordedFrames, true);
+            string path = Path.Combine(Application.persistentDataPath, fileName);
             File.WriteAllText(path, json);
-            follower.logger.LogInfo($"Saved recording to {path}");
-        }
-        public void LoadRecording(string filename)
-        {
-            string path = Path.Combine(Application.persistentDataPath, $"{filename}.json");
-            if (!File.Exists(path))
-            {
-                follower.logger.LogInfo($"Recording file not found: {path}");
-                return;
-            }
-
-            string json = File.ReadAllText(path);
-            var data = JsonUtility.FromJson<RecordingData>(json);
-            recordedFrames = data.frames;
-            follower.logger.LogInfo($"Loaded recording with {recordedFrames.Count} frames");
-        }
-
-        [Serializable]
-        private class RecordingData
-        {
-            public List<FrameData> frames;
+            follower.logger.LogInfo("Recording saved to: " + path);
         }
     }
     public class LineRenderers : MonoBehaviour
