@@ -14,12 +14,14 @@ using UnityEngine.Networking;
 using System.Text;
 using BepInEx.Configuration;
 using static WalkSimulator.PlayerFollower;
+using UnityEngine.InputSystem.XR;
 
 namespace WalkSimulator
 {
     public class PlayerFollower : MonoBehaviour
     {
         private PlayerFollowerGUI gui;
+        public MovementRecorder movementRecorder;
         public ConfigEntry<string> DiscordWebhookUrl;
 
         private const float TARGET_PROXIMITY_THRESHOLD = 0.5f;
@@ -89,6 +91,7 @@ namespace WalkSimulator
         private void Awake()
         {
             gui = new PlayerFollowerGUI(this);
+            movementRecorder = new MovementRecorder(this);
 
             // Initialize Components
             logger = BepInEx.Logging.Logger.CreateLogSource("WalkSimulator");
@@ -124,6 +127,7 @@ namespace WalkSimulator
             lineRenderers.Initialize("PathLine", "DirectionLine", pathColor, directionColor, lineAlpha, pathLineWidth, directionLineWidth);
 
             pathPositions = new List<Vector3>();
+
             InitializeHardcodedPresets();
         }
         public void ScanActiveObjects()
@@ -164,6 +168,7 @@ namespace WalkSimulator
         }
         private void FixedUpdate()
         {
+            movementRecorder.FixedUpdate();
             Transform localBody = Rig.Instance.body;
 
             /*
@@ -399,7 +404,7 @@ namespace WalkSimulator
             lineRenderers.UpdateLineRenderers(localBody, targetTransform);
             UpdateMovement(localBody, targetTransform);
         }
-        private void StopFollowing()
+        public void StopFollowing()
         {
             followPlayerEnabled = false;
             currentPlayer = null;
@@ -574,7 +579,7 @@ namespace WalkSimulator
             StartMovement(localDirection);
             TurnTowardsTargetPosition(localBody, localBody.position + fleeDirection);
         }
-        private void UpdateMovement(Transform localBody, Transform targetTransform)
+        public void UpdateMovement(Transform localBody, Transform targetTransform)
         {
             Vector3 directionToTarget = targetTransform.position - localBody.position;
             directionToTarget.y = 0f;
@@ -1145,6 +1150,11 @@ namespace WalkSimulator
         public enum ActivationPoint { OnReachGround, MidHold, OnRelease }
         private bool isLeftHanded = true;
 
+
+        public static int[] bones = new int[] {
+            4, 3, 5, 4, 19, 18, 20, 19, 3, 18, 21, 20, 22, 21, 25, 21, 29, 21, 31, 29, 27, 25, 24, 22, 6, 5, 7, 6, 10, 6, 14, 6, 16, 14, 12, 10, 9, 7
+        };
+
         public PlayerFollowerGUI(PlayerFollower follower)
         {
             this.follower = follower;
@@ -1564,6 +1574,39 @@ namespace WalkSimulator
                     sender.Initialize(follower.DiscordWebhookUrl.Value, logs);
                 }
             }
+
+            if (!follower.movementRecorder.isRecording && !follower.movementRecorder.isReplaying)
+            {
+                if (GUILayout.Button("Start Recording"))
+                {
+                    follower.movementRecorder.StartRecording();
+                }
+                if (GUILayout.Button("Start Replay"))
+                {
+                    follower.movementRecorder.StartReplay();
+                }
+            }
+            else if (follower.movementRecorder.isRecording)
+            {
+                GUILayout.Label("Recording in progress...");
+                if (GUILayout.Button("Stop Recording"))
+                {
+                    follower.movementRecorder.StopRecording();
+                }
+            }
+            else if (follower.movementRecorder.isReplaying)
+            {
+                GUILayout.Label("Replaying recording...");
+                if (GUILayout.Button("Stop Replay"))
+                {
+                    follower.movementRecorder.StopReplay();
+                }
+            }
+            if (GUILayout.Button("Save Recording"))
+            {
+                follower.movementRecorder.SaveRecording("myRecording");
+            }
+
             GUILayout.EndVertical();
 
             GUILayout.BeginVertical(sectionStyle);
@@ -1753,6 +1796,295 @@ namespace WalkSimulator
             GUILayout.EndHorizontal();
             GUILayout.EndVertical();
             GUI.DragWindow();
+        }
+    }
+    public class MovementRecorder : MonoBehaviour
+    {
+
+        [Serializable]
+        public class FrameData
+        {
+            public float timestamp;
+            public SerializableVector3 bodyPosition;
+            public SerializableQuaternion bodyRotation;
+            public SerializableVector3 headPosition;
+            public SerializableQuaternion headRotation;
+            public SerializableVector3 leftHandPosition;
+            public SerializableQuaternion leftHandRotation;
+            public SerializableVector3 rightHandPosition;
+            public SerializableQuaternion rightHandRotation;
+            public List<BoneData> bones;
+            public SerializableVector3 inputDirection;
+        }
+
+        [Serializable]
+        public class BoneData
+        {
+            public int boneIndex;
+            public SerializableVector3 position;
+            public SerializableQuaternion rotation;
+        }
+
+        [Serializable]
+        public struct SerializableVector3
+        {
+            public float x, y, z;
+
+            public SerializableVector3(Vector3 v)
+            {
+                x = v.x;
+                y = v.y;
+                z = v.z;
+            }
+
+            public Vector3 ToVector3()
+            {
+                return new Vector3(x, y, z);
+            }
+        }
+
+        [Serializable]
+        public struct SerializableQuaternion
+        {
+            public float x, y, z, w;
+
+            public SerializableQuaternion(Quaternion q)
+            {
+                x = q.x;
+                y = q.y;
+                z = q.z;
+                w = q.w;
+            }
+
+            public Quaternion ToQuaternion()
+            {
+                return new Quaternion(x, y, z, w);
+            }
+        }
+
+
+        private List<FrameData> recordedFrames = new List<FrameData>();
+        private float recordingStartTime;
+        public bool isRecording = false;
+        public bool isReplaying = false;
+        private int currentReplayFrame = 0;
+        private float replayStartTime;
+
+        private PlayerFollower follower;
+        private Transform virtualTargetTransform;
+        private List<Behaviour> trackingComponents = new List<Behaviour>(); // idk what this is lol chatgpt helped me
+        public MovementRecorder(PlayerFollower follower)
+        {
+            this.follower = follower;
+            GameObject virtualTarget = new GameObject("VirtualReplayTarget");
+            virtualTargetTransform = virtualTarget.transform;
+        }
+        public void StartRecording()
+        {
+            if (isRecording || isReplaying) return;
+
+            recordedFrames.Clear();
+            recordingStartTime = Time.time;
+            isRecording = true;
+            follower.logger.LogInfo("Started recording movement");
+        }
+
+        public void StopRecording()
+        {
+            if (!isRecording) return;
+
+            isRecording = false;
+            follower.logger.LogInfo($"Stopped recording. Captured {recordedFrames.Count} frames");
+        }
+        public void StartReplay()
+        {
+            if (isRecording || isReplaying || recordedFrames.Count == 0) return;
+
+            TrackedPoseDriver[] poseDrivers = Rig.Instance.GetComponentsInChildren<TrackedPoseDriver>();
+            foreach (var driver in poseDrivers)
+            {
+                driver.enabled = false;
+                trackingComponents.Add(driver);
+            }
+
+            SaveRecording("test2");
+
+            FrameData startingFrame = recordedFrames[0];
+
+            Rig.Instance.body.position = startingFrame.bodyPosition.ToVector3();
+            Rig.Instance.body.rotation = startingFrame.bodyRotation.ToQuaternion();
+
+            Rig.Instance.head.position = startingFrame.headPosition.ToVector3();
+            Rig.Instance.head.rotation = startingFrame.headRotation.ToQuaternion();
+
+            Rig.Instance.leftHand.transform.position = startingFrame.leftHandPosition.ToVector3();
+            Rig.Instance.leftHand.transform.rotation = startingFrame.leftHandRotation.ToQuaternion();
+            Rig.Instance.rightHand.transform.position = startingFrame.rightHandPosition.ToVector3();
+            Rig.Instance.rightHand.transform.rotation = startingFrame.rightHandRotation.ToQuaternion();
+
+            foreach (VRRig vrrig in GorillaParent.instance.vrrigs)
+            {
+                if (vrrig == GorillaTagger.Instance.offlineVRRig)
+                {
+                    foreach (var boneData in startingFrame.bones)
+                    {
+                        var bone = vrrig.mainSkin.bones[boneData.boneIndex];
+                        bone.position = boneData.position.ToVector3();
+                        bone.rotation = boneData.rotation.ToQuaternion();
+                    }
+                    break;
+                }
+            }
+
+            isReplaying = true;
+            currentReplayFrame = 1;
+            replayStartTime = Time.time;
+            follower.logger.LogInfo("Started replay with teleport to starting position");
+
+            follower.StopFollowing();
+            follower.followPlayerEnabled = true;
+        }
+
+        public void StopReplay()
+        {
+            if (!isReplaying) return;
+            foreach (var component in trackingComponents)
+            {
+                if (component != null) { component.enabled = true; }
+            }
+            trackingComponents.Clear();
+            isReplaying = false;
+            follower.StopFollowing();
+            follower.logger.LogInfo("Stopped replay");
+        }
+
+        public void FixedUpdate()
+        {
+            if (isRecording)
+            {
+                RecordFrame();
+            }
+            else if (isReplaying)
+            {
+                ReplayFrame();
+            }
+        }
+
+        private void RecordFrame()
+        {
+            var frame = new FrameData
+            {
+                timestamp = Time.time - recordingStartTime,
+                bodyPosition = new SerializableVector3(Rig.Instance.body.position),
+                bodyRotation = new SerializableQuaternion(Rig.Instance.body.rotation),
+                headPosition = new SerializableVector3(Rig.Instance.head.position),
+                headRotation = new SerializableQuaternion(Rig.Instance.head.rotation),
+                leftHandPosition = new SerializableVector3(Rig.Instance.leftHand.transform.position),
+                leftHandRotation = new SerializableQuaternion(Rig.Instance.leftHand.transform.rotation),
+                rightHandPosition = new SerializableVector3(Rig.Instance.rightHand.transform.position),
+                rightHandRotation = new SerializableQuaternion(Rig.Instance.rightHand.transform.rotation),
+                inputDirection = new SerializableVector3(InputHandler.inputDirectionNoY),
+                bones = new List<BoneData>()
+            };
+
+            foreach (VRRig vrrig in GorillaParent.instance.vrrigs)
+            {
+                if (vrrig == GorillaTagger.Instance.offlineVRRig)
+                {
+                    foreach (int boneIndex in PlayerFollowerGUI.bones)
+                    {
+                        var bone = vrrig.mainSkin.bones[boneIndex];
+                        frame.bones.Add(new BoneData
+                        {
+                            boneIndex = boneIndex,
+                            position = new SerializableVector3(bone.position),
+                            rotation = new SerializableQuaternion(bone.rotation)
+                        });
+                    }
+                    break;
+                }
+            }
+
+            recordedFrames.Add(frame);
+        }
+
+        private void ReplayFrame()
+        {
+            if (currentReplayFrame >= recordedFrames.Count)
+            {
+                StopReplay();
+                return;
+            }
+            SaveRecording("test");
+            float currentTime = Time.time - replayStartTime;
+            var frame = recordedFrames[currentReplayFrame];
+
+            if (currentTime >= frame.timestamp)
+            {
+                virtualTargetTransform.position = frame.bodyPosition.ToVector3();
+                virtualTargetTransform.rotation = frame.bodyRotation.ToQuaternion();
+
+                Rig.Instance.body.position = virtualTargetTransform.position;
+                Rig.Instance.body.rotation = virtualTargetTransform.rotation;
+
+                follower.UpdateMovement(Rig.Instance.body, virtualTargetTransform);
+
+                Rig.Instance.leftHand.transform.position = frame.leftHandPosition.ToVector3();
+                Rig.Instance.leftHand.transform.rotation = frame.leftHandRotation.ToQuaternion();
+                Rig.Instance.rightHand.transform.position = frame.rightHandPosition.ToVector3();
+                Rig.Instance.rightHand.transform.rotation = frame.rightHandRotation.ToQuaternion();
+                Rig.Instance.head.position = frame.headPosition.ToVector3();
+                Rig.Instance.head.rotation = frame.headRotation.ToQuaternion();
+
+                foreach (VRRig vrrig in GorillaParent.instance.vrrigs)
+                {
+                    if (vrrig == GorillaTagger.Instance.offlineVRRig)
+                    {
+                        foreach (var boneData in frame.bones)
+                        {
+                            var bone = vrrig.mainSkin.bones[boneData.boneIndex];
+                            bone.position = boneData.position.ToVector3();
+                            bone.rotation = boneData.rotation.ToQuaternion();
+                        }
+                        break;
+                    }
+                }
+
+                currentReplayFrame++;
+            }
+        }
+        public void SaveRecording(string filename)
+        {
+            if (recordedFrames.Count == 0)
+            {
+                follower.logger.LogInfo("No recording to save");
+                return;
+            }
+
+            string json = JsonUtility.ToJson(recordedFrames);
+            string path = Path.Combine(Application.persistentDataPath, $"{filename}.json");
+            File.WriteAllText(path, json);
+            follower.logger.LogInfo($"Saved recording to {path}");
+        }
+        public void LoadRecording(string filename)
+        {
+            string path = Path.Combine(Application.persistentDataPath, $"{filename}.json");
+            if (!File.Exists(path))
+            {
+                follower.logger.LogInfo($"Recording file not found: {path}");
+                return;
+            }
+
+            string json = File.ReadAllText(path);
+            var data = JsonUtility.FromJson<RecordingData>(json);
+            recordedFrames = data.frames;
+            follower.logger.LogInfo($"Loaded recording with {recordedFrames.Count} frames");
+        }
+
+        [Serializable]
+        private class RecordingData
+        {
+            public List<FrameData> frames;
         }
     }
     public class LineRenderers : MonoBehaviour

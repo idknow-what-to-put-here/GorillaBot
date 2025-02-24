@@ -9,6 +9,7 @@ namespace WalkSimulator.Rigging
 {
     public class HandDriver : MonoBehaviour
     {
+        public bool UpdateHandRotation = true;
         public bool grip;
         public bool trigger;
         public bool primary;
@@ -42,7 +43,7 @@ namespace WalkSimulator.Rigging
 
         public void Init(bool isLeft)
         {
-            this.isLeft = isLeft; // Use 'this' for clarity
+            this.isLeft = isLeft;
             defaultOffset = new Vector3(isLeft ? (-0.25f) : 0.25f, -0.45f, 0.2f);
             head = Rig.Instance.head;
             body = Rig.Instance.body;
@@ -54,9 +55,7 @@ namespace WalkSimulator.Rigging
                 return;
             }
 
-            controller = isLeft
-                             ? GorillaLocomotion.Player.Instance.leftControllerTransform
-                             : GorillaLocomotion.Player.Instance.rightControllerTransform;
+            controller = isLeft ? GorillaLocomotion.Player.Instance.leftControllerTransform : GorillaLocomotion.Player.Instance.rightControllerTransform;
 
             if (GorillaTagger.Instance == null || GorillaTagger.Instance.offlineVRRig == null)
             {
@@ -65,8 +64,7 @@ namespace WalkSimulator.Rigging
                 return;
             }
 
-            handMap = isLeft ? GorillaTagger.Instance.offlineVRRig.leftHand
-                             : GorillaTagger.Instance.offlineVRRig.rightHand;
+            handMap = isLeft ? GorillaTagger.Instance.offlineVRRig.leftHand : GorillaTagger.Instance.offlineVRRig.rightHand;
 
             transform.position = DefaultPosition;
             targetPosition = DefaultPosition;
@@ -123,7 +121,10 @@ namespace WalkSimulator.Rigging
                 Debug.LogError("Error setting overrideTarget: " + ex.Message);
             }
 
-            StartCoroutine(UpdateRotationOffset());
+            if (UpdateHandRotation)
+            {
+                StartCoroutine(UpdateRotationOffset());
+            }
         }
 
         private IEnumerator UpdateRotationOffset()

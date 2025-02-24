@@ -76,8 +76,7 @@ namespace WalkSimulator.Rigging
             leftHand.Init(true);
             leftHand.enabled = false;
 
-            rightHand =
-                new GameObject("WalkSim Right Hand Driver").AddComponent<HandDriver>();
+            rightHand = new GameObject("WalkSim Right Hand Driver").AddComponent<HandDriver>();
             rightHand.Init(false);
             rightHand.enabled = false;
 
@@ -89,15 +88,14 @@ namespace WalkSimulator.Rigging
         {
             if (GorillaLocomotion.Player.Instance == null)
             {
-                return; // Exit if Player instance is missing
+                return;
             }
 
             scale = GorillaLocomotion.Player.Instance.scale;
-            smoothedGroundPosition =
-                Vector3.Lerp(smoothedGroundPosition, lastGroundPosition, 0.2f);
+            smoothedGroundPosition = Vector3.Lerp(smoothedGroundPosition, lastGroundPosition, 0.2f);
             OnGroundRaycast();
 
-            Animator?.Animate(); // Null-conditional operator
+            Animator?.Animate();
             Move();
         }
 
@@ -108,8 +106,7 @@ namespace WalkSimulator.Rigging
                 return;
             }
 
-            rigidbody.velocity =
-                Vector3.Lerp(rigidbody.velocity, (targetPosition - body.position) * speed, 1f);
+            rigidbody.velocity = Vector3.Lerp(rigidbody.velocity, (targetPosition - body.position) * speed, 1f);
 
             if (!useGravity)
             {
@@ -123,20 +120,15 @@ namespace WalkSimulator.Rigging
             Vector3 raycastStartPoint = body.TransformPoint(raycastOffset);
             float scaledRaycastRadius = raycastRadius * scale;
 
-            bool hasRaycastHit = Physics.Raycast(
-                raycastStartPoint, Vector3.down, out RaycastHit raycastHit,
-                scaledRaycastLength, GorillaLocomotion.Player.Instance.locomotionEnabledLayers);
+            bool hasRaycastHit = Physics.Raycast(raycastStartPoint, Vector3.down, out RaycastHit raycastHit, scaledRaycastLength, GorillaLocomotion.Player.Instance.locomotionEnabledLayers);
 
-            bool hasSpherecastHit = Physics.SphereCast(
-                raycastStartPoint, scaledRaycastRadius, Vector3.down, out RaycastHit spherecastHit,
-                scaledRaycastLength, GorillaLocomotion.Player.Instance.locomotionEnabledLayers);
+            bool hasSpherecastHit = Physics.SphereCast(raycastStartPoint, scaledRaycastRadius, Vector3.down, out RaycastHit spherecastHit, scaledRaycastLength, GorillaLocomotion.Player.Instance.locomotionEnabledLayers);
 
             RaycastHit groundHit;
 
             if (hasRaycastHit && hasSpherecastHit)
             {
-                groundHit = (raycastHit.distance <= spherecastHit.distance) ? raycastHit
-                                                                             : spherecastHit;
+                groundHit = (raycastHit.distance <= spherecastHit.distance) ? raycastHit : spherecastHit;
             }
             else if (hasSpherecastHit)
             {
