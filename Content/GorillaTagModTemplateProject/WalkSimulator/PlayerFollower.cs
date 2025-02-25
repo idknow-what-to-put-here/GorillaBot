@@ -15,6 +15,8 @@ using System.Text;
 using BepInEx.Configuration;
 using static WalkSimulator.PlayerFollower;
 using UnityEngine.InputSystem.XR;
+using System.Xml;
+using Newtonsoft.Json;
 
 namespace WalkSimulator
 {
@@ -847,7 +849,7 @@ namespace WalkSimulator
         }
         private string GetPresetDirectory()
         {
-            return Path.Combine(BepInEx.Paths.GameRootPath, "PlayerFollower");
+            return Path.Combine(BepInEx.Paths.GameRootPath, "PlayerFollower", "Paths");
         }
         public void SavePreset(string presetName)
         {
@@ -1602,10 +1604,6 @@ namespace WalkSimulator
                     follower.movementRecorder.StopReplay();
                 }
             }
-            if (GUILayout.Button("Save Recording"))
-            {
-                follower.movementRecorder.SaveRecording("myRecording.json");
-            }
 
             GUILayout.EndVertical();
 
@@ -1862,7 +1860,14 @@ namespace WalkSimulator
             }
         }
 
-        private List<FrameData> recordedFrames = new List<FrameData>();
+        [Serializable]
+        public class ReplayData
+        {
+            public List<FrameData> frames = new List<FrameData>();
+            public string recordingDate;
+        }
+
+        private ReplayData currentReplay = new ReplayData();
         private float recordingStartTime;
         public bool isRecording = false;
         public bool isReplaying = false;
@@ -1871,13 +1876,21 @@ namespace WalkSimulator
 
         private PlayerFollower follower;
         private Transform virtualTargetTransform;
-        private List<Behaviour> trackingComponents = new List<Behaviour>(); // idk what this is lol chatgpt helped me
+        private List<Behaviour> trackingComponents = new List<Behaviour>();
+        private string replayFilePath = "";
+
+        public string ReplayFolder => Path.Combine(BepInEx.Paths.GameRootPath, "PlayerFollower", "Replays");
 
         public MovementRecorder(PlayerFollower follower)
         {
             this.follower = follower;
             GameObject virtualTarget = new GameObject("VirtualReplayTarget");
             virtualTargetTransform = virtualTarget.transform;
+
+            if (!Directory.Exists(ReplayFolder))
+            {
+                Directory.CreateDirectory(ReplayFolder);
+            }
         }
         public void FixedUpdate()
         {
@@ -1885,7 +1898,7 @@ namespace WalkSimulator
             {
                 RecordFrame();
             }
-            else if (isReplaying)
+            else if (isReplaying && currentReplayFrame < currentReplay.frames.Count)
             {
                 ReplayFrame();
             }
@@ -1894,7 +1907,8 @@ namespace WalkSimulator
         {
             if (isRecording || isReplaying) return;
 
-            recordedFrames.Clear();
+            currentReplay = new ReplayData();
+            currentReplay.recordingDate = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
             recordingStartTime = Time.time;
             isRecording = true;
             follower.logger.LogInfo("Started recording movement");
@@ -1903,13 +1917,74 @@ namespace WalkSimulator
         {
             if (!isRecording) return;
 
+            isReplaying = false;
             isRecording = false;
-            follower.logger.LogInfo($"Stopped recording. Captured {recordedFrames.Count} frames");
-            SaveRecording("recording.json");
+            string filename = $"replay_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.json";
+            SaveRecording(filename);
+            follower.logger.LogInfo($"Stopped recording. Captured {currentReplay.frames.Count} frames and saved to {filename}");
+        }
+        public void SaveRecording(string filename)
+        {
+            if (currentReplay.frames.Count == 0)
+            {
+                follower.logger.LogWarning("No frames to save");
+                return;
+            }
+
+            try
+            {
+                string filePath = Path.Combine(ReplayFolder, filename);
+                string json = JsonConvert.SerializeObject(currentReplay, Newtonsoft.Json.Formatting.Indented);
+                File.WriteAllText(filePath, json);
+                follower.logger.LogInfo($"Saved recording to {filePath}");
+            }
+            catch (Exception ex)
+            {
+                follower.logger.LogError($"Error saving recording: {ex.Message}");
+            }
+        }
+        public void LoadReplay(string filename)
+        {
+            try
+            {
+                string filePath = Path.Combine(ReplayFolder, filename);
+                if (!File.Exists(filePath))
+                {
+                    follower.logger.LogError($"Replay file not found: {filePath}");
+                    return;
+                }
+
+                string json = File.ReadAllText(filePath);
+                currentReplay = JsonConvert.DeserializeObject<ReplayData>(json);
+                replayFilePath = filePath;
+                follower.logger.LogInfo($"Loaded replay from {filePath} with {currentReplay.frames.Count} frames");
+            }
+            catch (Exception ex)
+            {
+                follower.logger.LogError($"Error loading replay: {ex.Message}");
+            }
+        }
+        public string[] GetSavedReplays()
+        {
+            try
+            {
+                if (!Directory.Exists(ReplayFolder))
+                {
+                    Directory.CreateDirectory(ReplayFolder);
+                    return new string[0];
+                }
+
+                return Directory.GetFiles(ReplayFolder, "replay_*.json", SearchOption.TopDirectoryOnly).Select(Path.GetFileName).ToArray();
+            }
+            catch (Exception ex)
+            {
+                follower.logger.LogError($"Error getting saved replays: {ex.Message}");
+                return new string[0];
+            }
         }
         public void StartReplay()
         {
-            if (isRecording || isReplaying || recordedFrames.Count == 0) return;
+            if (isRecording || isReplaying || currentReplay.frames.Count == 0) return;
 
             TrackedPoseDriver[] poseDrivers = Rig.Instance.GetComponentsInChildren<TrackedPoseDriver>();
             foreach (var driver in poseDrivers)
@@ -1918,7 +1993,7 @@ namespace WalkSimulator
                 trackingComponents.Add(driver);
             }
 
-            FrameData startingFrame = recordedFrames[0];
+            FrameData startingFrame = currentReplay.frames[0];
 
             Rig.Instance.body.position = startingFrame.bodyPosition.ToVector3();
             Rig.Instance.body.rotation = startingFrame.bodyRotation.ToQuaternion();
@@ -1946,13 +2021,14 @@ namespace WalkSimulator
                 }
             }
             */
+            isRecording = false;
             isReplaying = true;
             currentReplayFrame = 1;
             replayStartTime = Time.time;
             follower.logger.LogInfo("Started replay with teleport to starting position");
 
             follower.StopFollowing();
-            follower.followPlayerEnabled = true;
+            follower.followPlayerEnabled = false;
         }
         public void StopReplay()
         {
@@ -1963,6 +2039,7 @@ namespace WalkSimulator
             }
             trackingComponents.Clear();
             isReplaying = false;
+            isRecording = false;
             follower.StopFollowing();
             follower.logger.LogInfo("Stopped replay");
         }
@@ -2002,17 +2079,17 @@ namespace WalkSimulator
                 }
             }
             */
-            recordedFrames.Add(frame);
+            currentReplay.frames.Add(frame);
         }
         private void ReplayFrame()
         {
-            if (currentReplayFrame >= recordedFrames.Count)
+            if (currentReplayFrame >= currentReplay.frames.Count)
             {
                 StopReplay();
                 return;
             }
             float currentTime = Time.time - replayStartTime;
-            var frame = recordedFrames[currentReplayFrame];
+            var frame = currentReplay.frames[currentReplayFrame];
 
             if (currentTime >= frame.timestamp)
             {
@@ -2030,6 +2107,8 @@ namespace WalkSimulator
                 Rig.Instance.rightHand.transform.rotation = frame.rightHandRotation.ToQuaternion();
                 Rig.Instance.head.position = frame.headPosition.ToVector3();
                 Rig.Instance.head.rotation = frame.headRotation.ToQuaternion();
+                Rig.Instance.body.position = frame.bodyPosition.ToVector3();
+                Rig.Instance.body.rotation = frame.bodyRotation.ToQuaternion();
 
                 /*
                 foreach (VRRig vrrig in GorillaParent.instance.vrrigs)
@@ -2048,13 +2127,6 @@ namespace WalkSimulator
                 */
                 currentReplayFrame++;
             }
-        }
-        public void SaveRecording(string fileName)
-        {
-            string json = JsonUtility.ToJson(recordedFrames, true);
-            string path = Path.Combine(Application.persistentDataPath, fileName);
-            File.WriteAllText(path, json);
-            follower.logger.LogInfo("Recording saved to: " + path);
         }
     }
     public class LineRenderers : MonoBehaviour
