@@ -1152,11 +1152,6 @@ namespace WalkSimulator
         public enum ActivationPoint { OnReachGround, MidHold, OnRelease }
         private bool isLeftHanded = true;
 
-
-        public static int[] bones = new int[] {
-            4, 3, 5, 4, 19, 18, 20, 19, 3, 18, 21, 20, 22, 21, 25, 21, 29, 21, 31, 29, 27, 25, 24, 22, 6, 5, 7, 6, 10, 6, 14, 6, 16, 14, 12, 10, 9, 7
-        };
-
         public PlayerFollowerGUI(PlayerFollower follower)
         {
             this.follower = follower;
@@ -1545,6 +1540,7 @@ namespace WalkSimulator
         }
         private void DrawMisc()
         {
+            #region Misc
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Misc", headerStyle);
             if (GUILayout.Button("Refresh Objects"))
@@ -1577,6 +1573,11 @@ namespace WalkSimulator
                 }
             }
 
+            GUILayout.EndVertical();
+            #endregion
+            #region Movement Recorder
+            GUILayout.BeginVertical(sectionStyle);
+            GUILayout.Label("Movement Recorder", headerStyle);
             if (!follower.movementRecorder.isRecording && !follower.movementRecorder.isReplaying)
             {
                 if (GUILayout.Button("Start Recording"))
@@ -1606,7 +1607,8 @@ namespace WalkSimulator
             }
 
             GUILayout.EndVertical();
-
+            #endregion
+            #region Flee
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Flee Settings", headerStyle);
 
@@ -1625,7 +1627,8 @@ namespace WalkSimulator
                 }
             }
             GUILayout.EndVertical();
-
+            #endregion
+            #region Hand
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Hand Settings", headerStyle);
 
@@ -1681,41 +1684,8 @@ namespace WalkSimulator
             }
 
             GUILayout.EndVertical();
-
-            /*
-            GUILayout.BeginVertical(sectionStyle);
-            GUILayout.Label($"Active Objects ({follower.activeObjects.Count})", headerStyle);
-
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Refresh Objects"))
-            {
-                follower.ScanActiveObjects();
-            }
-            GUILayout.Label($"Scan Interval: {follower.scanInterval}s");
-            follower.scanInterval = GUILayout.HorizontalSlider(follower.scanInterval, 0.5f, 5f);
-            GUILayout.EndHorizontal();
-
-            scrollPosition = GUILayout.BeginScrollView(scrollPosition);
-            foreach (GameObject obj in follower.activeObjects.OrderBy(o => o.name))
-            {
-                GUILayout.BeginHorizontal(GUI.skin.box);
-
-                GUILayout.Label($"{obj.name}", GUILayout.Width(150));
-                string type = obj.GetComponent<Collider>() ? "[Collider]" : "[No Collider]";
-                GUILayout.Label(type, GUILayout.Width(80));
-
-                Vector3 pos = obj.transform.position;
-                float distance = Vector3.Distance(pos, Rig.Instance.body.position);
-                GUILayout.Label($"Dist: {distance:F1}m", GUILayout.Width(80));
-
-                GUILayout.Label($"Layer: {LayerMask.LayerToName(obj.layer)}");
-
-                GUILayout.EndHorizontal();
-            }
-
-            GUILayout.EndVertical();
-            */
-
+            #endregion
+            #region Tag
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Tag Settings", headerStyle);
 
@@ -1735,6 +1705,7 @@ namespace WalkSimulator
                 }
             }
             GUILayout.EndVertical();
+            #endregion
         }
         private void DrawLogsTab()
         {
@@ -1810,54 +1781,31 @@ namespace WalkSimulator
             public SerializableQuaternion leftHandRotation;
             public SerializableVector3 rightHandPosition;
             public SerializableQuaternion rightHandRotation;
-            //public List<BoneData> bones;
             public SerializableVector3 inputDirection;
+            public bool leftGrip;
+            public bool leftTrigger;
+            public bool leftPrimary;
+            public bool leftSecondary;
+            public bool rightGrip;
+            public bool rightTrigger;
+            public bool rightPrimary;
+            public bool rightSecondary;
         }
 
-        /*
-        [Serializable]
-        public class BoneData
-        {
-            public int boneIndex;
-            public SerializableVector3 position;
-            public SerializableQuaternion rotation;
-        }
-        */
         [Serializable]
         public struct SerializableVector3
         {
             public float x, y, z;
-
-            public SerializableVector3(Vector3 v)
-            {
-                x = v.x;
-                y = v.y;
-                z = v.z;
-            }
-
-            public Vector3 ToVector3()
-            {
-                return new Vector3(x, y, z);
-            }
+            public SerializableVector3(Vector3 v) { x = v.x; y = v.y; z = v.z; }
+            public Vector3 ToVector3() { return new Vector3(x, y, z); }
         }
 
         [Serializable]
         public struct SerializableQuaternion
         {
             public float x, y, z, w;
-
-            public SerializableQuaternion(Quaternion q)
-            {
-                x = q.x;
-                y = q.y;
-                z = q.z;
-                w = q.w;
-            }
-
-            public Quaternion ToQuaternion()
-            {
-                return new Quaternion(x, y, z, w);
-            }
+            public SerializableQuaternion(Quaternion q) { x = q.x; y = q.y; z = q.z; w = q.w; }
+            public Quaternion ToQuaternion() { return new Quaternion(x, y, z, w); }
         }
 
         [Serializable]
@@ -2006,21 +1954,6 @@ namespace WalkSimulator
             Rig.Instance.rightHand.transform.position = startingFrame.rightHandPosition.ToVector3();
             Rig.Instance.rightHand.transform.rotation = startingFrame.rightHandRotation.ToQuaternion();
 
-            /*
-            foreach (VRRig vrrig in GorillaParent.instance.vrrigs)
-            {
-                if (vrrig == GorillaTagger.Instance.offlineVRRig)
-                {
-                    foreach (var boneData in startingFrame.bones)
-                    {
-                        var bone = vrrig.mainSkin.bones[boneData.boneIndex];
-                        bone.position = boneData.position.ToVector3();
-                        bone.rotation = boneData.rotation.ToQuaternion();
-                    }
-                    break;
-                }
-            }
-            */
             isRecording = false;
             isReplaying = true;
             currentReplayFrame = 1;
@@ -2035,7 +1968,10 @@ namespace WalkSimulator
             if (!isReplaying) return;
             foreach (var component in trackingComponents)
             {
-                if (component != null) { component.enabled = true; }
+                if (component != null)
+                {
+                    component.enabled = true;
+                }
             }
             trackingComponents.Clear();
             isReplaying = false;
@@ -2057,28 +1993,17 @@ namespace WalkSimulator
                 rightHandPosition = new SerializableVector3(Rig.Instance.rightHand.transform.position),
                 rightHandRotation = new SerializableQuaternion(Rig.Instance.rightHand.transform.rotation),
                 inputDirection = new SerializableVector3(InputHandler.inputDirectionNoY),
-                //bones = new List<BoneData>()
+                leftGrip = Rig.Instance.leftHand.grip,
+                leftTrigger = Rig.Instance.leftHand.trigger,
+                leftPrimary = Rig.Instance.leftHand.primary,
+                leftSecondary = Rig.Instance.leftHand.secondary,
+                rightGrip = Rig.Instance.rightHand.grip,
+                rightTrigger = Rig.Instance.rightHand.trigger,
+                rightPrimary = Rig.Instance.rightHand.primary,
+                rightSecondary = Rig.Instance.rightHand.secondary,
+
             };
 
-            /*
-            foreach (VRRig vrrig in GorillaParent.instance.vrrigs)
-            {
-                if (vrrig == GorillaTagger.Instance.offlineVRRig)
-                {
-                    foreach (int boneIndex in PlayerFollowerGUI.bones)
-                    {
-                        var bone = vrrig.mainSkin.bones[boneIndex];
-                        frame.bones.Add(new BoneData
-                        {
-                            boneIndex = boneIndex,
-                            position = new SerializableVector3(bone.position),
-                            rotation = new SerializableQuaternion(bone.rotation)
-                        });
-                    }
-                    break;
-                }
-            }
-            */
             currentReplay.frames.Add(frame);
         }
         private void ReplayFrame()
@@ -2088,6 +2013,7 @@ namespace WalkSimulator
                 StopReplay();
                 return;
             }
+
             float currentTime = Time.time - replayStartTime;
             var frame = currentReplay.frames[currentReplayFrame];
 
@@ -2110,21 +2036,15 @@ namespace WalkSimulator
                 Rig.Instance.body.position = frame.bodyPosition.ToVector3();
                 Rig.Instance.body.rotation = frame.bodyRotation.ToQuaternion();
 
-                /*
-                foreach (VRRig vrrig in GorillaParent.instance.vrrigs)
-                {
-                    if (vrrig == GorillaTagger.Instance.offlineVRRig)
-                    {
-                        foreach (var boneData in frame.bones)
-                        {
-                            var bone = vrrig.mainSkin.bones[boneData.boneIndex];
-                            bone.position = boneData.position.ToVector3();
-                            bone.rotation = boneData.rotation.ToQuaternion();
-                        }
-                        break;
-                    }
-                }
-                */
+                Rig.Instance.leftHand.grip = frame.leftGrip;
+                Rig.Instance.leftHand.trigger = frame.leftTrigger;
+                Rig.Instance.leftHand.primary = frame.leftPrimary;
+                Rig.Instance.leftHand.secondary = frame.leftSecondary;
+
+                Rig.Instance.rightHand.grip = frame.rightGrip;
+                Rig.Instance.rightHand.trigger = frame.rightTrigger;
+                Rig.Instance.rightHand.primary = frame.rightPrimary;
+                Rig.Instance.rightHand.secondary = frame.rightSecondary;
                 currentReplayFrame++;
             }
         }
@@ -2293,6 +2213,10 @@ namespace WalkSimulator
     public class Archived
     {
         /*
+         *         public static int[] bones = new int[] {
+            4, 3, 5, 4, 19, 18, 20, 19, 3, 18, 21, 20, 22, 21, 25, 21, 29, 21, 31, 29, 27, 25, 24, 22, 6, 5, 7, 6, 10, 6, 14, 6, 16, 14, 12, 10, 9, 7
+        };
+
          * 
         // Waypoints for Tagging & Following
         private float lastWaypointUpdateTime = 0f;
