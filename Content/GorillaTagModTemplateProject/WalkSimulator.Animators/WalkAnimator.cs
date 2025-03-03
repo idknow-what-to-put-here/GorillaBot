@@ -30,6 +30,15 @@ namespace WalkSimulator.Animators
         private float jumpTime;
         private float walkCycleTime = 0f;
 
+        private float animationChangeInterval = 5f;
+        private float lastAnimationChangeTime = 0f;
+
+        private float randomCycleSpeedFactor = 1f;
+        private float randomHeightOffsetFactor = 1f;
+        private float randomHandOffsetInfluenceFactor = 1f;
+        private float randomStepLengthInfluenceFactor = 1f;
+        private float randomStepHeightInfluenceFactor = 1f;
+
         public override void Animate()
         {
             MoveBody();
@@ -41,6 +50,18 @@ namespace WalkSimulator.Animators
             if (!Plugin.Instance.Enabled)
             {
                 return;
+            }
+
+            randomCycleSpeedFactor = Mathf.PerlinNoise(Time.time, 0.0f) * 0.5f + 0.75f;
+            randomHeightOffsetFactor = Mathf.PerlinNoise(0.0f, Time.time) * 0.1f + 0.95f;
+            randomHandOffsetInfluenceFactor = Mathf.PerlinNoise(Time.time * 0.5f, 0.0f) * 0.2f + 0.65f;
+            randomStepLengthInfluenceFactor = Mathf.PerlinNoise(0.0f, Time.time * 0.5f) * 0.3f + 0.85f;
+            randomStepHeightInfluenceFactor = Mathf.PerlinNoise(Time.time * 0.3f, 0.0f) * 0.2f + 0.75f;
+
+            if (Time.time - lastAnimationChangeTime > animationChangeInterval)
+            {
+                //ChangeAnimationMode();
+                lastAnimationChangeTime = Time.time;
             }
 
             if (!hasJumped && rig.onGround && Keyboard.current.spaceKey.wasPressedThisFrame)
@@ -58,7 +79,11 @@ namespace WalkSimulator.Animators
                 hasJumped = false;
             }
         }
-
+        private void ChangeAnimationMode()
+        {
+            animationMode = (WalkAnimationMode)(((int)animationMode + 1) % System.Enum.GetValues(typeof(WalkAnimationMode)).Length);
+            Debug.Log($"Animation mode changed to: {animationMode}");
+        }
         public void JumpMain()
         {
             hasJumped = true;
@@ -132,8 +157,8 @@ namespace WalkSimulator.Animators
             float minHeight, maxHeight, modeSpeedMultiplier;
             AdjustParametersBasedOnMode(out minHeight, out maxHeight, out modeSpeedMultiplier);
 
-            float cycleSpeed = NotMoving ? 2f * Mathf.PI : walkCycleTime * 2f * Mathf.PI * modeSpeedMultiplier;
-            float heightOffset = Extensions.Map(Mathf.Sin(cycleSpeed), -1f, 1f, minHeight, maxHeight);
+            float cycleSpeed = NotMoving ? 2f * Mathf.PI : walkCycleTime * 2f * Mathf.PI * modeSpeedMultiplier * randomCycleSpeedFactor;
+            float heightOffset = Extensions.Map(Mathf.Sin(cycleSpeed), -1f, 1f, minHeight * randomHeightOffsetFactor, maxHeight * randomHeightOffsetFactor);
 
             targetHeight = heightOffset;
             Vector3 targetPosition = rig.lastGroundPosition + Vector3.up * targetHeight * Player.Instance.scale;
@@ -242,7 +267,7 @@ namespace WalkSimulator.Animators
             Vector3 groundNormal = rig.lastNormal;
 
             float forwardInfluence = Mathf.Abs(Vector3.Dot(InputHandler.inputDirectionNoY, Vector3.forward));
-            float handOffsetInfluence = Extensions.Map(forwardInfluence, 0f, 1f, 0.4f, 0.5f);
+            float handOffsetInfluence = Extensions.Map(forwardInfluence, 0f, 1f, 0.4f, 0.5f) * randomHandOffsetInfluenceFactor;
 
             Vector3 handOffsetDirection = body.TransformDirection(InputHandler.inputDirectionNoY * handOffsetInfluence);
             handOffsetDirection.y = 0f;
@@ -270,8 +295,8 @@ namespace WalkSimulator.Animators
         {
             float forwardInfluence = Mathf.Abs(Vector3.Dot(InputHandler.inputDirectionNoY, Vector3.forward));
             float verticalInfluence = Vector3.Dot(rig.lastNormal, Vector3.up);
-            float stepHeightInfluence = Extensions.Map(verticalInfluence, 0f, 1f, 0.1f, 0.6f);
-            float stepLengthInfluence = Extensions.Map(forwardInfluence, 0f, 1f, 0.5f, 1.25f);
+            float stepHeightInfluence = Extensions.Map(verticalInfluence, 0f, 1f, 0.1f, 0.6f) * randomStepHeightInfluenceFactor;
+            float stepLengthInfluence = Extensions.Map(forwardInfluence, 0f, 1f, 0.5f, 1.25f) * randomStepLengthInfluenceFactor;
 
             stepLengthInfluence *= stepHeightInfluence * Player.Instance.scale;
             float stepHeight = GetStepHeight();

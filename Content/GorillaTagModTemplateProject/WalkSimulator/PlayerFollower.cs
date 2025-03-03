@@ -17,6 +17,9 @@ using static WalkSimulator.PlayerFollower;
 using UnityEngine.InputSystem.XR;
 using System.Xml;
 using Newtonsoft.Json;
+using static OVRPlugin;
+using static UnityEngine.UI.DefaultControls;
+using UnityEngine.AI;
 
 namespace WalkSimulator
 {
@@ -89,6 +92,14 @@ namespace WalkSimulator
         // Flee
         public bool fleeEnabled;
         public float FLEE_RADIUS = 10f;
+
+        // NavMesh
+        private NavMeshData navMeshData;
+        private NavMeshDataInstance navMeshInstance;
+        private List<NavMeshBuildSource> sources = new List<NavMeshBuildSource>();
+        private Bounds bounds;
+        public bool isSelectingPathPoints = false;
+        public List<Vector3> selectedPoints = new List<Vector3>();
 
         private void Awake()
         {
@@ -1093,6 +1104,148 @@ namespace WalkSimulator
             };
         }
         #endregion
+        public void PathfindTo(Vector3 destination)
+        {
+            if (!isSelectingPathPoints)
+            {
+                BuildNavMesh();
+                isSelectingPathPoints = true;
+                selectedPoints.Clear();
+                selectedPoints.Add(GorillaLocomotion.Player.Instance.bodyCollider.transform.position);
+                logger.LogInfo("Started path point selection. Click points to create path");
+
+                NavMeshPath path = new NavMeshPath();
+                if (NavMesh.CalculatePath(transform.position, destination, NavMesh.AllAreas, path))
+                {
+                    if (path.status == NavMeshPathStatus.PathComplete)
+                    {
+                        selectedPoints.AddRange(path.corners);
+                        lineRenderers.pathPositions = new List<Vector3>(selectedPoints);
+                        lineRenderers.UpdatePathLineRenderer();
+                        logger.LogInfo("Initial path calculated. Modify if needed.");
+                    }
+                }
+            }
+            else
+            {
+                isSelectingPathPoints = false;
+                selectedPoints.Add(destination);
+
+                lineRenderers.pathPositions = new List<Vector3>(selectedPoints);
+                lineRenderers.UpdatePathLineRenderer();
+                followPathEnabled = true;
+                logger.LogInfo("Path created through selected points.");
+            }
+        }
+        public void AddPathPoint(Vector3 point)
+        {
+            if (isSelectingPathPoints)
+            {
+                selectedPoints.Add(point);
+                lineRenderers.pathPositions = new List<Vector3>(selectedPoints);
+                lineRenderers.UpdatePathLineRenderer();
+                logger.LogInfo($"Added path point: {point}");
+            }
+        }
+        private void BuildNavMesh()
+        {
+            var colliders = GameObject.FindObjectsOfType<Collider>();
+            sources.Clear();
+            bounds = new Bounds();
+
+            activeObjects.Clear();
+
+            foreach (var collider in colliders)
+            {
+                if (!collider.enabled) continue;
+
+                if (!activeObjects.Contains(collider.gameObject))
+                {
+                    activeObjects.Add(collider.gameObject);
+                }
+
+                NavMeshBuildSource source = new NavMeshBuildSource();
+
+                if (collider is BoxCollider box)
+                {
+                    source.shape = NavMeshBuildSourceShape.Box;
+                    source.size = Vector3.Scale(box.size, box.transform.lossyScale);
+                    source.transform = Matrix4x4.TRS(box.transform.TransformPoint(box.center), box.transform.rotation, Vector3.one);
+                }
+                else if (collider is SphereCollider sphere)
+                {
+                    source.shape = NavMeshBuildSourceShape.Sphere;
+                    float scale = Mathf.Max(sphere.transform.lossyScale.x, sphere.transform.lossyScale.y, sphere.transform.lossyScale.z);
+                    source.size = new Vector3(sphere.radius * 2 * scale, sphere.radius * 2 * scale, sphere.radius * 2 * scale);
+                    source.transform = Matrix4x4.TRS(sphere.transform.TransformPoint(sphere.center), sphere.transform.rotation, Vector3.one);
+                }
+                else if (collider is CapsuleCollider capsule)
+                {
+                    source.shape = NavMeshBuildSourceShape.Capsule;
+                    float scale = Mathf.Max(capsule.transform.lossyScale.x, capsule.transform.lossyScale.z);
+                    source.size = new Vector3(capsule.radius * 2 * scale, capsule.height * capsule.transform.lossyScale.y, capsule.radius * 2 * scale);
+                    source.transform = Matrix4x4.TRS(capsule.transform.TransformPoint(capsule.center), capsule.transform.rotation, Vector3.one);
+                }
+                else if (collider is MeshCollider meshCollider && meshCollider.sharedMesh != null)
+                {
+                    try
+                    {
+                        source.shape = NavMeshBuildSourceShape.Box;
+                        var bounds = meshCollider.bounds;
+                        source.size = bounds.size;
+                        source.transform = Matrix4x4.TRS(bounds.center, meshCollider.transform.rotation, Vector3.one);
+                        var topSource = new NavMeshBuildSource
+                        {
+                            shape = NavMeshBuildSourceShape.Box,
+                            size = new Vector3(bounds.size.x, 0.1f, bounds.size.z),
+                            transform = Matrix4x4.TRS(
+                                new Vector3(bounds.center.x, bounds.max.y + 0.05f, bounds.center.z),
+                                meshCollider.transform.rotation,
+                                Vector3.one
+                            ),
+                            area = 0
+                        };
+                        sources.Add(topSource);
+                    }
+                    catch (System.Exception e)
+                    {
+                        logger.LogWarning($"Failed to process MeshCollider {meshCollider.name}: {e.Message}");
+                        continue;
+                    }
+                }
+                else
+                {
+                    continue;
+                }
+
+                source.area = 0;
+                sources.Add(source);
+                bounds.Encapsulate(collider.bounds);
+            }
+            avoidObjects = true;
+            bounds.Expand(10.0f);
+            var buildSettings = NavMesh.GetSettingsByID(0);
+            buildSettings.agentHeight = 2.0f;
+            buildSettings.agentRadius = 1.0f;
+            buildSettings.agentClimb = 0.5f;
+            buildSettings.minRegionArea = 0.1f;
+            buildSettings.overrideVoxelSize = true;
+            buildSettings.voxelSize = 0.17f;
+
+            navMeshData = NavMeshBuilder.BuildNavMeshData(buildSettings, sources, bounds, Vector3.zero, Quaternion.identity
+            );
+
+            if (navMeshData != null)
+            {
+                if (navMeshInstance.valid) { navMeshInstance.Remove(); }
+                navMeshInstance = NavMesh.AddNavMeshData(navMeshData);
+                logger.LogInfo("NavMesh built successfully with object avoidance enabled");
+            }
+            else
+            {
+                logger.LogError("Failed to build NavMesh");
+            }
+        }
     }
     public class PlayerFollowerGUI : MonoBehaviour
     {
@@ -1439,6 +1592,12 @@ namespace WalkSimulator
             {
                 showPresetManager = true;
             }
+            if (GUILayout.Button(follower.isSelectingPathPoints ? "Finish Path to City" : "Go To City using nevmesh"))
+            {
+                Vector3 cityDestination = new Vector3(-60.81395f, 16.54018f, -115.02606f);
+                follower.PathfindTo(cityDestination);
+            }
+
             GUILayout.EndVertical();
         }
         private void DrawPresetManagerWindow(int windowID)
