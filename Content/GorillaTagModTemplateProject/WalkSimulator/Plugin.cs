@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
 using BepInEx;
+using GorillaBot.WalkSimulator.Bot;
 using GorillaNetworking;
 using HarmonyLib;
 using UnityEngine;
