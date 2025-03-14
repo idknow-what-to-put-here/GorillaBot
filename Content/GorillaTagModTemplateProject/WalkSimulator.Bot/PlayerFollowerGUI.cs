@@ -1,30 +1,20 @@
-﻿using BepInEx.Logging;
-using Photon.Pun;
+﻿using Photon.Pun;
 using Photon.Realtime;
 using UnityEngine;
 using System.Collections.Generic;
-using WalkSimulator.Animators;
 using WalkSimulator.Rigging;
 using System.IO;
-using System.Collections;
-using System.Linq;
-using UnityEngine.SceneManagement;
 using System;
-using UnityEngine.Networking;
-using System.Text;
-using BepInEx.Configuration;
-using static GorillaBot.WalkSimulator.Bot.PlayerFollower;
-using UnityEngine.InputSystem.XR;
-using System.Xml;
-using Newtonsoft.Json;
-using static OVRPlugin;
-using static UnityEngine.UI.DefaultControls;
-using UnityEngine.AI;
-using WalkSimulator;
-using static GorillaBot.WalkSimulator.Bot.PlayerFollowerUtils;
+using static WalkSimulator.Bot.PlayerFollower;
+using static WalkSimulator.Bot.PlayerFollowerUtils;
 
-namespace GorillaBot.WalkSimulator.Bot
+namespace WalkSimulator.Bot
 {
+    public enum ActionSource
+    {
+        Server,
+        Client,
+    }
     public class PlayerFollowerGUI : MonoBehaviour
     {
         private readonly PlayerFollower follower;
@@ -295,7 +285,7 @@ namespace GorillaBot.WalkSimulator.Bot
                 Transform localBody = GetLocalBody();
                 if (localBody == null) return;
                 AddPointAndUpdate(localBody.position);
-                follower.dashboardServer.AddWaypoint(localBody.position);
+                follower.dashboardServer.AddWaypoint(localBody.position, ActionSource.Client);
             }
 
             if (GUILayout.Button("Add Forward Waypoint"))
@@ -314,7 +304,7 @@ namespace GorillaBot.WalkSimulator.Bot
                     newWaypoint = follower.lineRenderers.pathPositions[count - 1] + localBody.forward * 2f;
                 }
                 AddPointAndUpdate(newWaypoint);
-                follower.dashboardServer.AddWaypoint(newWaypoint);
+                follower.dashboardServer.AddWaypoint(newWaypoint, ActionSource.Client);
             }
 
             if (GUILayout.Button(follower.waitingForJumpStart ? "Set Jump Start" : "Set Jump End"))
@@ -357,7 +347,7 @@ namespace GorillaBot.WalkSimulator.Bot
                     positions.RemoveAt(positions.Count - 1);
                     follower.lineRenderers.UpdatePathLineRenderer();
                 }
-                follower.dashboardServer.RemoveLastWaypoint();
+                follower.dashboardServer.RemoveLastWaypoint(ActionSource.Client);
             }
 
             if (GUILayout.Button("Start Path Following"))
@@ -366,13 +356,14 @@ namespace GorillaBot.WalkSimulator.Bot
                 {
                     follower.followPathEnabled = true;
                 }
-                follower.dashboardServer.StartPathFollowing();
+                follower.dashboardServer.StartPathFollowing(ActionSource.Client);
             }
 
             if (GUILayout.Button("Stop Path Following"))
             {
                 follower.StopPathing();
-                follower.dashboardServer.StopPathFollowing();
+                follower.dashboardServer.StopPathFollowing(ActionSource.Client);
+                follower.dashboardServer.ClearWaypoints(ActionSource.Client);
             }
 
             GUILayout.Space(10);

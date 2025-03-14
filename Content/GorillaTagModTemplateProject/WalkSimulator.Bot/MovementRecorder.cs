@@ -8,7 +8,7 @@ using UnityEngine.SpatialTracking;
 using WalkSimulator;
 using WalkSimulator.Rigging;
 
-namespace GorillaBot.WalkSimulator.Bot
+namespace WalkSimulator.Bot
 {
     public class MovementRecorder : MonoBehaviour
     {
