@@ -61,6 +61,11 @@ namespace GorillaBot.WalkSimulator.Bot
         public Dictionary<string, PathPreset> hardcodedPresets;
         public IEnumerable<string> HardcodedPresetNames => hardcodedPresets.Keys;
 
+        // Replays & Presets sub-tabs.
+        private int replayPresetTabIndex = 0;
+        private readonly string[] replayPresetTabNames = new string[] { "Replays", "Presets" };
+        private string saveReplayFilename = "";
+
         // Loging
         public static List<string> logMessages = new List<string>();
         private Vector2 logScrollPosition;
@@ -378,9 +383,58 @@ namespace GorillaBot.WalkSimulator.Bot
 
             GUILayout.EndVertical();
         }
+        #region Presets
         private void DrawPresetManagerWindow(int windowID)
         {
-            GUILayout.BeginVertical();
+            GUILayout.BeginVertical(sectionStyle);
+            GUILayout.Label("Replays & Presets", headerStyle);
+
+            replayPresetTabIndex = GUILayout.Toolbar(replayPresetTabIndex, replayPresetTabNames);
+            switch (replayPresetTabIndex)
+            {
+                case 0:
+                    DrawReplaysTab();
+                    break;
+                case 1:
+                    DrawPresetsTab();
+                    break;
+            }
+            GUILayout.EndVertical();
+            GUI.DragWindow();
+        }
+        private void DrawReplaysTab()
+        {
+            GUILayout.BeginVertical(sectionStyle);
+            GUILayout.Label("Replay Manager", headerStyle);
+
+            GUILayout.Label("Load Saved Replays", headerStyle);
+            string[] savedReplays = follower.movementRecorder.GetSavedReplays();
+            if (savedReplays.Length == 0)
+            {
+                GUILayout.Label("No saved replays found.");
+            }
+            else
+            {
+                Vector2 replayScrollPos = Vector2.zero;
+                replayScrollPos = GUILayout.BeginScrollView(replayScrollPos, GUILayout.Height(150));
+                foreach (var replay in savedReplays)
+                {
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label(Path.GetFileNameWithoutExtension(replay));
+                    if (GUILayout.Button("Load", GUILayout.Width(60)))
+                    {
+                        follower.movementRecorder.LoadReplay(replay);
+                        follower.movementRecorder.StartReplay();
+                    }
+                    GUILayout.EndHorizontal();
+                }
+                GUILayout.EndScrollView();
+            }
+            GUILayout.EndVertical();
+        }
+        private void DrawPresetsTab()
+        {
+            GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Preset Management", headerStyle);
 
             GUILayout.BeginHorizontal();
@@ -398,7 +452,6 @@ namespace GorillaBot.WalkSimulator.Bot
             }
 
             GUILayout.Space(10);
-
             GUILayout.BeginHorizontal();
             {
                 GUILayout.BeginVertical(GUILayout.Width(180));
@@ -466,15 +519,9 @@ namespace GorillaBot.WalkSimulator.Bot
                     follower.logger.LogError("Failed to generate preset code. Check the logs for details.");
                 }
             }
-
-            if (GUILayout.Button("Close Preset Manager"))
-            {
-                showPresetManager = false;
-            }
-
             GUILayout.EndVertical();
-            GUI.DragWindow();
         }
+        #endregion
         private void DrawMisc()
         {
             #region Misc
@@ -515,6 +562,7 @@ namespace GorillaBot.WalkSimulator.Bot
             #region Movement Recorder
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Movement Recorder", headerStyle);
+
             if (!follower.movementRecorder.isRecording && !follower.movementRecorder.isReplaying)
             {
                 if (GUILayout.Button("Start Recording"))
@@ -542,7 +590,10 @@ namespace GorillaBot.WalkSimulator.Bot
                     follower.movementRecorder.StopReplay();
                 }
             }
-
+            if (GUILayout.Button("Open Preset Manager"))
+            {
+                showPresetManager = true;
+            }
             GUILayout.EndVertical();
             #endregion
             #region Flee

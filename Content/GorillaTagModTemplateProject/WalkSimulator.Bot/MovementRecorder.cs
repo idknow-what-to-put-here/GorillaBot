@@ -1,31 +1,19 @@
-﻿using BepInEx.Logging;
-using Photon.Pun;
-using Photon.Realtime;
-using UnityEngine;
+﻿using System;
 using System.Collections.Generic;
-using WalkSimulator.Animators;
-using WalkSimulator.Rigging;
 using System.IO;
-using System.Collections;
 using System.Linq;
-using UnityEngine.SceneManagement;
-using System;
-using UnityEngine.Networking;
-using System.Text;
-using BepInEx.Configuration;
-using static GorillaBot.WalkSimulator.Bot.PlayerFollower;
-using UnityEngine.InputSystem.XR;
-using System.Xml;
 using Newtonsoft.Json;
-using static OVRPlugin;
-using static UnityEngine.UI.DefaultControls;
-using UnityEngine.AI;
+using UnityEngine;
+using UnityEngine.SpatialTracking;
 using WalkSimulator;
+using WalkSimulator.Rigging;
 
 namespace GorillaBot.WalkSimulator.Bot
 {
     public class MovementRecorder : MonoBehaviour
     {
+        #region Nested Types
+
         [Serializable]
         public class FrameData
         {
@@ -53,16 +41,31 @@ namespace GorillaBot.WalkSimulator.Bot
         public struct SerializableVector3
         {
             public float x, y, z;
-            public SerializableVector3(Vector3 v) { x = v.x; y = v.y; z = v.z; }
-            public Vector3 ToVector3() { return new Vector3(x, y, z); }
+
+            public SerializableVector3(Vector3 v)
+            {
+                x = v.x;
+                y = v.y;
+                z = v.z;
+            }
+
+            public Vector3 ToVector3() => new Vector3(x, y, z);
         }
 
         [Serializable]
         public struct SerializableQuaternion
         {
             public float x, y, z, w;
-            public SerializableQuaternion(Quaternion q) { x = q.x; y = q.y; z = q.z; w = q.w; }
-            public Quaternion ToQuaternion() { return new Quaternion(x, y, z, w); }
+
+            public SerializableQuaternion(Quaternion q)
+            {
+                x = q.x;
+                y = q.y;
+                z = q.z;
+                w = q.w;
+            }
+
+            public Quaternion ToQuaternion() => new Quaternion(x, y, z, w);
         }
 
         [Serializable]
@@ -72,23 +75,24 @@ namespace GorillaBot.WalkSimulator.Bot
             public string recordingDate;
         }
 
+        #endregion
+
         private ReplayData currentReplay = new ReplayData();
         private float recordingStartTime;
-        public bool isRecording = false;
-        public bool isReplaying = false;
-        private int currentReplayFrame = 0;
+        public bool isRecording { get; private set; } = false;
+        public bool isReplaying { get; private set; } = false;
+        private int currentReplayFrame;
         private float replayStartTime;
 
-        private PlayerFollower follower;
+        private readonly List<Behaviour> trackingComponents = new List<Behaviour>();
         private Transform virtualTargetTransform;
-        private List<Behaviour> trackingComponents = new List<Behaviour>();
-        private string replayFilePath = "";
+        private readonly PlayerFollower follower;
 
         public string ReplayFolder => Path.Combine(BepInEx.Paths.GameRootPath, "PlayerFollower", "Replays");
 
         public MovementRecorder(PlayerFollower follower)
         {
-            this.follower = follower;
+            this.follower = follower ?? throw new ArgumentNullException(nameof(follower));
             GameObject virtualTarget = new GameObject("VirtualReplayTarget");
             virtualTargetTransform = virtualTarget.transform;
 
@@ -110,38 +114,37 @@ namespace GorillaBot.WalkSimulator.Bot
         }
         public void StartRecording()
         {
-            if (isRecording || isReplaying) return;
+            if (isRecording || isReplaying) { return; }
 
-            currentReplay = new ReplayData();
-            currentReplay.recordingDate = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+            currentReplay = new ReplayData { recordingDate = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss") };
             recordingStartTime = Time.time;
             isRecording = true;
-            follower.logger.LogInfo("Started recording movement");
+            follower.logger.LogInfo("Started recording movement.");
         }
         public void StopRecording()
         {
-            if (!isRecording) return;
+            if (!isRecording) { return; }
 
-            isReplaying = false;
             isRecording = false;
+            isReplaying = false;
             string filename = $"replay_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.json";
             SaveRecording(filename);
-            follower.logger.LogInfo($"Stopped recording. Captured {currentReplay.frames.Count} frames and saved to {filename}");
+            follower.logger.LogInfo($"Stopped recording. Captured {currentReplay.frames.Count} frames and saved to {filename}.");
         }
         public void SaveRecording(string filename)
         {
             if (currentReplay.frames.Count == 0)
             {
-                follower.logger.LogWarning("No frames to save");
+                follower.logger.LogWarning("No frames to save.");
                 return;
             }
 
             try
             {
                 string filePath = Path.Combine(ReplayFolder, filename);
-                string json = JsonConvert.SerializeObject(currentReplay, Newtonsoft.Json.Formatting.Indented);
+                string json = JsonConvert.SerializeObject(currentReplay, Formatting.Indented);
                 File.WriteAllText(filePath, json);
-                follower.logger.LogInfo($"Saved recording to {filePath}");
+                follower.logger.LogInfo($"Saved recording to {filePath}.");
             }
             catch (Exception ex)
             {
@@ -161,8 +164,7 @@ namespace GorillaBot.WalkSimulator.Bot
 
                 string json = File.ReadAllText(filePath);
                 currentReplay = JsonConvert.DeserializeObject<ReplayData>(json);
-                replayFilePath = filePath;
-                follower.logger.LogInfo($"Loaded replay from {filePath} with {currentReplay.frames.Count} frames");
+                follower.logger.LogInfo($"Loaded replay from {filePath} with {currentReplay.frames.Count} frames.");
             }
             catch (Exception ex)
             {
@@ -176,7 +178,7 @@ namespace GorillaBot.WalkSimulator.Bot
                 if (!Directory.Exists(ReplayFolder))
                 {
                     Directory.CreateDirectory(ReplayFolder);
-                    return new string[0];
+                    return Array.Empty<string>();
                 }
 
                 return Directory.GetFiles(ReplayFolder, "replay_*.json", SearchOption.TopDirectoryOnly).Select(Path.GetFileName).ToArray();
@@ -184,12 +186,12 @@ namespace GorillaBot.WalkSimulator.Bot
             catch (Exception ex)
             {
                 follower.logger.LogError($"Error getting saved replays: {ex.Message}");
-                return new string[0];
+                return Array.Empty<string>();
             }
         }
         public void StartReplay()
         {
-            if (isRecording || isReplaying || currentReplay.frames.Count == 0) return;
+            if (isRecording || isReplaying || currentReplay.frames.Count == 0) { return; }
 
             TrackedPoseDriver[] poseDrivers = Rig.Instance.GetComponentsInChildren<TrackedPoseDriver>();
             foreach (var driver in poseDrivers)
@@ -198,43 +200,31 @@ namespace GorillaBot.WalkSimulator.Bot
                 trackingComponents.Add(driver);
             }
 
-            FrameData startingFrame = currentReplay.frames[0];
-
-            Rig.Instance.body.position = startingFrame.bodyPosition.ToVector3();
-            Rig.Instance.body.rotation = startingFrame.bodyRotation.ToQuaternion();
-
-            Rig.Instance.head.position = startingFrame.headPosition.ToVector3();
-            Rig.Instance.head.rotation = startingFrame.headRotation.ToQuaternion();
-
-            Rig.Instance.leftHand.transform.position = startingFrame.leftHandPosition.ToVector3();
-            Rig.Instance.leftHand.transform.rotation = startingFrame.leftHandRotation.ToQuaternion();
-            Rig.Instance.rightHand.transform.position = startingFrame.rightHandPosition.ToVector3();
-            Rig.Instance.rightHand.transform.rotation = startingFrame.rightHandRotation.ToQuaternion();
+            SetRigTransform(currentReplay.frames[0]);
 
             isRecording = false;
             isReplaying = true;
             currentReplayFrame = 1;
             replayStartTime = Time.time;
-            follower.logger.LogInfo("Started replay with teleport to starting position");
+            follower.logger.LogInfo("Started replay with teleport to starting position.");
 
             follower.StopFollowing();
             follower.followPlayerEnabled = false;
         }
         public void StopReplay()
         {
-            if (!isReplaying) return;
+            if (!isReplaying) { return; }
+
             foreach (var component in trackingComponents)
             {
-                if (component != null)
-                {
-                    component.enabled = true;
-                }
+                if (component != null) { component.enabled = true; }
             }
             trackingComponents.Clear();
+
             isReplaying = false;
             isRecording = false;
             follower.StopFollowing();
-            follower.logger.LogInfo("Stopped replay");
+            follower.logger.LogInfo("Stopped replay.");
         }
         private void RecordFrame()
         {
@@ -258,7 +248,6 @@ namespace GorillaBot.WalkSimulator.Bot
                 rightTrigger = Rig.Instance.rightHand.trigger,
                 rightPrimary = Rig.Instance.rightHand.primary,
                 rightSecondary = Rig.Instance.rightHand.secondary,
-
             };
 
             currentReplay.frames.Add(frame);
@@ -272,26 +261,24 @@ namespace GorillaBot.WalkSimulator.Bot
             }
 
             float currentTime = Time.time - replayStartTime;
-            var frame = currentReplay.frames[currentReplayFrame];
+            FrameData frame = currentReplay.frames[currentReplayFrame];
 
             if (currentTime >= frame.timestamp)
             {
                 virtualTargetTransform.position = frame.bodyPosition.ToVector3();
                 virtualTargetTransform.rotation = frame.bodyRotation.ToQuaternion();
-
                 Rig.Instance.body.position = virtualTargetTransform.position;
                 Rig.Instance.body.rotation = virtualTargetTransform.rotation;
-
                 follower.UpdateMovement(Rig.Instance.body, virtualTargetTransform);
+
+                Rig.Instance.head.position = frame.headPosition.ToVector3();
+                Rig.Instance.head.rotation = frame.headRotation.ToQuaternion();
 
                 Rig.Instance.leftHand.transform.position = frame.leftHandPosition.ToVector3();
                 Rig.Instance.leftHand.transform.rotation = frame.leftHandRotation.ToQuaternion();
+
                 Rig.Instance.rightHand.transform.position = frame.rightHandPosition.ToVector3();
                 Rig.Instance.rightHand.transform.rotation = frame.rightHandRotation.ToQuaternion();
-                Rig.Instance.head.position = frame.headPosition.ToVector3();
-                Rig.Instance.head.rotation = frame.headRotation.ToQuaternion();
-                Rig.Instance.body.position = frame.bodyPosition.ToVector3();
-                Rig.Instance.body.rotation = frame.bodyRotation.ToQuaternion();
 
                 Rig.Instance.leftHand.grip = frame.leftGrip;
                 Rig.Instance.leftHand.trigger = frame.leftTrigger;
@@ -302,8 +289,23 @@ namespace GorillaBot.WalkSimulator.Bot
                 Rig.Instance.rightHand.trigger = frame.rightTrigger;
                 Rig.Instance.rightHand.primary = frame.rightPrimary;
                 Rig.Instance.rightHand.secondary = frame.rightSecondary;
+
                 currentReplayFrame++;
             }
+        }
+        private void SetRigTransform(FrameData frame)
+        {
+            Rig.Instance.body.position = frame.bodyPosition.ToVector3();
+            Rig.Instance.body.rotation = frame.bodyRotation.ToQuaternion();
+
+            Rig.Instance.head.position = frame.headPosition.ToVector3();
+            Rig.Instance.head.rotation = frame.headRotation.ToQuaternion();
+
+            Rig.Instance.leftHand.transform.position = frame.leftHandPosition.ToVector3();
+            Rig.Instance.leftHand.transform.rotation = frame.leftHandRotation.ToQuaternion();
+
+            Rig.Instance.rightHand.transform.position = frame.rightHandPosition.ToVector3();
+            Rig.Instance.rightHand.transform.rotation = frame.rightHandRotation.ToQuaternion();
         }
     }
 }
