@@ -10,21 +10,13 @@ using System.Collections;
 using System.Linq;
 using UnityEngine.SceneManagement;
 using System;
-using UnityEngine.Networking;
 using System.Text;
 using BepInEx.Configuration;
-using static GorillaBot.WalkSimulator.Bot.PlayerFollower;
-using UnityEngine.InputSystem.XR;
-using System.Xml;
-using Newtonsoft.Json;
-using static OVRPlugin;
-using static UnityEngine.UI.DefaultControls;
 using UnityEngine.AI;
-using WalkSimulator;
-using static GorillaBot.WalkSimulator.Bot.PlayerFollowerUtils;
+using static WalkSimulator.Bot.PlayerFollowerUtils;
 using System.Threading.Tasks;
 
-namespace GorillaBot.WalkSimulator.Bot
+namespace WalkSimulator.Bot
 {
     public class PlayerFollower : MonoBehaviour
     {

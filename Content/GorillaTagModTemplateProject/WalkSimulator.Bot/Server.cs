@@ -11,53 +11,55 @@ using NAudio.Wave;
 using Newtonsoft.Json;
 using UnityEngine;
 
-namespace GorillaBot.WalkSimulator.Bot
+namespace WalkSimulator.Bot
 {
-    class Server
+    public class TextToSpeechService
     {
-        class TextToSpeechResponse
+        public static HttpClient _client;
+        private const string ApiBaseUrl = "http://localhost:3000/api";
+        private static readonly SemaphoreSlim _audioPlaybackSemaphore = new SemaphoreSlim(1, 1);
+
+        public class TextToSpeechResponse
         {
             public string AudioData { get; set; }
         }
 
-        class ErrorResponse
+        public class ErrorResponse
         {
             public string Error { get; set; }
             public string Details { get; set; }
             public string Suggestion { get; set; }
         }
 
-        public static readonly HttpClient client = new HttpClient();
-        private const string ApiBaseUrl = "http://localhost:3000/api";
-
-        public Server()
+        public TextToSpeechService()
         {
-            client.Timeout = TimeSpan.FromSeconds(30);
-            client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+            _client.Timeout = TimeSpan.FromSeconds(30);
+            _client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
         }
 
-        public async Task ConvertTextToSpeechAsync(string text)
+        public async Task<bool> ConvertTextToSpeechAsync(string text, string voice = "en-us", string language = "en-US")
         {
+            if (string.IsNullOrWhiteSpace(text)) { throw new ArgumentException("Text cannot be empty", nameof(text)); }
             try
             {
-                var healthResponse = await client.GetAsync($"{ApiBaseUrl}/health");
+                var healthResponse = await _client.GetAsync($"{ApiBaseUrl}/health");
                 if (!healthResponse.IsSuccessStatusCode)
                 {
-                    Console.WriteLine("API server is not available. Please make sure it's running.");
-                    return;
+                    LogMessage("API server is not available. Please make sure it's running.");
+                    return false;
                 }
 
                 var requestData = new
                 {
-                    text = text,
-                    voice = "en-us",
-                    language = "en-US"
+                    text,
+                    voice,
+                    language
                 };
 
                 var content = new StringContent(JsonConvert.SerializeObject(requestData), Encoding.UTF8, "application/json");
 
-                Console.WriteLine("Sending request to server...");
-                var response = await client.PostAsync($"{ApiBaseUrl}/text-to-speech", content);
+                LogMessage("Sending request to text-to-speech service...");
+                var response = await _client.PostAsync($"{ApiBaseUrl}/text-to-speech", content);
 
                 if (response.IsSuccessStatusCode)
                 {
@@ -67,76 +69,125 @@ namespace GorillaBot.WalkSimulator.Bot
                     if (result?.AudioData != null)
                     {
                         byte[] audioBytes = Convert.FromBase64String(result.AudioData);
-                        string outputPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "output.mp3");
-                        File.WriteAllBytes(outputPath, audioBytes);
+                        string outputPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"tts_{DateTime.Now:yyyyMMdd_HHmmss}.mp3");
+                        await File.WriteAllBytesAsync(outputPath, audioBytes);
 
-                        Console.WriteLine($"Audio saved to: {outputPath}");
-                        PlayAudio(outputPath);
+                        LogMessage($"Audio saved to: {outputPath}");
+                        await PlayAudioAsync(outputPath);
+                        return true;
+                    }
+                    else
+                    {
+                        LogMessage("Received empty audio data from API");
+                        return false;
                     }
                 }
                 else
                 {
-                    Console.WriteLine($"API request failed: {response.StatusCode}");
+                    LogMessage($"API request failed: {response.StatusCode}");
                     var errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error details: {errorContent}");
+                    LogMessage($"Error details: {errorContent}");
+
                     try
                     {
                         var errorObj = JsonConvert.DeserializeObject<ErrorResponse>(errorContent);
                         if (!string.IsNullOrEmpty(errorObj?.Suggestion))
                         {
-                            Console.WriteLine($"Suggestion: {errorObj.Suggestion}");
+                            LogMessage($"Suggestion: {errorObj.Suggestion}");
                         }
                     }
-                    catch
+                    catch (Exception)
                     {
+
                     }
+
+                    return false;
                 }
+            }
+            catch (HttpRequestException ex)
+            {
+                LogMessage($"Network error: {ex.Message}");
+                return false;
+            }
+            catch (TaskCanceledException)
+            {
+                LogMessage("The request timed out. The server might be processing a large request or be unavailable.");
+                return false;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error: {ex.Message}");
-
-                if (ex is TaskCanceledException)
-                {
-                    Console.WriteLine("The request timed out. The server might be processing a large request or be unavailable.");
-                }
+                LogMessage($"Unexpected error: {ex.Message}");
+                return false;
             }
         }
-
-        private void PlayAudio(string filePath)
+        private async Task PlayAudioAsync(string filePath)
         {
+            if (!File.Exists(filePath))
+            {
+                LogMessage($"Audio file not found: {filePath}");
+                return;
+            }
+
             try
             {
+                await _audioPlaybackSemaphore.WaitAsync();
+
                 using (var audioFile = new AudioFileReader(filePath))
                 using (var outputDevice = new WaveOutEvent())
                 {
+                    var playbackCompletionSource = new TaskCompletionSource<bool>();
+
+                    outputDevice.PlaybackStopped += (s, e) =>
+                    {
+                        playbackCompletionSource.TrySetResult(true);
+                    };
+
                     outputDevice.Init(audioFile);
                     outputDevice.Play();
 
-                    Console.WriteLine("Playing audio... Press any key to stop.");
-                    Console.ReadKey();
+                    LogMessage("Playing audio... Press any key to stop.");
 
-                    outputDevice.Stop();
+                    using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(audioFile.TotalTime.TotalSeconds + 2)))
+                    {
+                        var keyPressTask = Task.Run(() => Console.ReadKey(true));
+                        var completedTask = await Task.WhenAny(keyPressTask, playbackCompletionSource.Task, Task.Delay(-1, cts.Token));
+
+                        outputDevice.Stop();
+                        await Task.Delay(100);
+                    }
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error playing audio: {ex.Message}");
+                LogMessage($"Error playing audio: {ex.Message}");
+            }
+            finally
+            {
+                _audioPlaybackSemaphore.Release();
             }
         }
+
+        private void LogMessage(string message)
+        {
+            Console.WriteLine($"[TextToSpeech] {message}");
+        }
     }
-    public class DashboardServer
+    public class DashboardServer : IDisposable
     {
         private const string ApiBaseUrl = "http://localhost:3000/api";
         private readonly HttpClient client;
         private readonly PlayerFollower follower;
         private ClientWebSocket wsClient;
         private CancellationTokenSource cts = new CancellationTokenSource();
+        private bool isDisposed = false;
+        private Task webSocketListenerTask;
+        private readonly object syncLock = new object();
+        private bool isConnecting = false;
 
         public DashboardServer(PlayerFollower follower)
         {
-            this.follower = follower;
-            this.client = Server.client;
+            this.follower = follower ?? throw new ArgumentNullException(nameof(follower));
+            this.client = TextToSpeechService._client ?? new HttpClient();
         }
 
         public async Task Initialize()
@@ -144,138 +195,263 @@ namespace GorillaBot.WalkSimulator.Bot
             await ConnectWebSocketAsync();
             Log("Path Destinations Server initialized with WebSocket sync.");
         }
-
         public void Shutdown()
         {
-            cts.Cancel();
-            if (wsClient != null)
-            {
-                wsClient.Abort();
-                wsClient.Dispose();
-            }
-            Log("Path Destinations Server shut down.");
+            Dispose();
         }
-
-        private async Task ConnectWebSocketAsync()
+        public void Dispose()
         {
-            wsClient = new ClientWebSocket();
+            if (isDisposed) return;
+
             try
             {
+                cts.Cancel();
+
+                if (wsClient?.State == WebSocketState.Open)
+                {
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "Shutting down", CancellationToken.None);
+                        }
+                        catch { }
+                    }).Wait(1000);
+                }
+
+                wsClient?.Dispose();
+                wsClient = null;
+
+                Log("Path Destinations Server shut down.");
+            }
+            catch (Exception ex)
+            {
+                Log($"Error during shutdown: {ex.Message}");
+            }
+            finally
+            {
+                isDisposed = true;
+            }
+        }
+        private async Task ConnectWebSocketAsync()
+        {
+            lock (syncLock)
+            {
+                if (isConnecting || isDisposed) return;
+                isConnecting = true;
+            }
+
+            try
+            {
+                if (wsClient != null)
+                {
+                    try { wsClient.Dispose(); } catch { }
+                }
+
+                wsClient = new ClientWebSocket();
+                wsClient.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
+
                 await wsClient.ConnectAsync(new Uri("ws://localhost:3000"), CancellationToken.None);
                 Log("WebSocket connected to dashboard server.");
-                _ = Task.Run(ListenWebSocketMessages);
+                webSocketListenerTask = Task.Run(ListenWebSocketMessages);
             }
             catch (Exception ex)
             {
                 Log($"WebSocket connection error: {ex.Message}");
+                _ = Task.Delay(5000).ContinueWith(_ => ConnectWebSocketAsync());
+            }
+            finally
+            {
+                lock (syncLock)
+                {
+                    isConnecting = false;
+                }
             }
         }
-
         private async Task ListenWebSocketMessages()
         {
-            var buffer = new byte[4096];
-            while (wsClient.State == WebSocketState.Open && !cts.Token.IsCancellationRequested)
+            var buffer = new byte[8192];
+            using var memoryStream = new System.IO.MemoryStream();
+
+            while (wsClient?.State == WebSocketState.Open && !cts.Token.IsCancellationRequested)
             {
-                WebSocketReceiveResult result;
+                WebSocketReceiveResult result = null;
+                memoryStream.SetLength(0);
+
                 try
                 {
-                    result = await wsClient.ReceiveAsync(new ArraySegment<byte>(buffer), cts.Token);
+                    do
+                    {
+                        result = await wsClient.ReceiveAsync(new ArraySegment<byte>(buffer), cts.Token);
+
+                        if (result.MessageType == WebSocketMessageType.Close)
+                        {
+                            await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+                            break;
+                        }
+
+                        await memoryStream.WriteAsync(buffer, 0, result.Count, cts.Token);
+                    }
+                    while (!result.EndOfMessage);
+
+                    if (result.MessageType == WebSocketMessageType.Close)
+                        break;
+
+                    memoryStream.Seek(0, System.IO.SeekOrigin.Begin);
+                    var messageJson = Encoding.UTF8.GetString(memoryStream.ToArray());
+
+                    try
+                    {
+                        var msg = JsonConvert.DeserializeObject<DashboardMessage>(messageJson);
+                        if (msg != null)
+                        {
+                            await HandleDashboardMessage(msg, ActionSource.Server);
+                        }
+                    }
+                    catch (JsonException ex)
+                    {
+                        Log($"Error parsing WebSocket message: {ex.Message}");
+                    }
                 }
                 catch (OperationCanceledException)
                 {
                     break;
                 }
-                catch (Exception ex)
+                catch (WebSocketException ex)
                 {
-                    Log($"WebSocket receive error: {ex.Message}");
-                    break;
-                }
-
-                if (result.MessageType == WebSocketMessageType.Close)
-                {
-                    await wsClient.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
-                    break;
-                }
-
-                var messageJson = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                try
-                {
-                    var msg = JsonConvert.DeserializeObject<DashboardMessage>(messageJson);
-                    if (msg != null)
+                    Log($"WebSocket error: {ex.Message}");
+                    if (!cts.Token.IsCancellationRequested)
                     {
-                        await HandleDashboardMessage(msg);
+                        _ = Task.Delay(5000).ContinueWith(_ => ConnectWebSocketAsync());
                     }
+                    break;
                 }
                 catch (Exception ex)
                 {
-                    Log($"Error parsing WebSocket message: {ex.Message}");
+                    Log($"Unexpected error in WebSocket listener: {ex.Message}");
+                    if (!cts.Token.IsCancellationRequested)
+                    {
+                        await Task.Delay(5000);
+                        _ = ConnectWebSocketAsync();
+                    }
+                    break;
                 }
             }
         }
-        private async Task HandleDashboardMessage(DashboardMessage msg)
+        #region Handle
+        private async Task HandleDashboardMessage(DashboardMessage msg, ActionSource source)
         {
-            if (msg.type == "state_update")
+            if (string.IsNullOrEmpty(msg?.type)) return;
+
+            try
             {
-                try
+                switch (msg.type)
                 {
-                    var botState = JsonConvert.DeserializeObject<BotState>(msg.data.ToString());
-                    if (botState != null)
+                    case "state_update":
+                        await HandleStateUpdate(msg.data, source);
+                       // await UpdateServerState();
+                        break;
+                    case "path_update":
+                        await HandlePathUpdate(msg.data, source);
+                        //await UpdateServerState();
+                        break;
+                    case "save_path":
+                        await HandleSavePath(msg.data, source);
+                        //await UpdateServerState();
+                        break;
+                    case "load_path":
+                        await HandleLoadPath(msg.data, source);
+                        //await UpdateServerState();
+                        break;
+                    default:
+                        Log($"Unknown message type: {msg.type}");
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Error handling message '{msg.type}': {ex.Message}");
+            }
+        }
+        private async Task HandleStateUpdate(object data, ActionSource source)
+        {
+            var botState = DeserializeData<BotState>(data);
+            if (botState != null)
+            {
+                if (source == ActionSource.Server)
+                {
+                    if (botState.followingPath != follower.followPathEnabled)
                     {
-                        if (botState.followingPath != follower.followPathEnabled)
-                        {
-                            follower.followPathEnabled = botState.followingPath;
-                            Log($"Path following {(botState.followingPath ? "started" : "stopped")} from dashboard");
-                        }
-                        if (botState.pathPositions != null && botState.pathPositions.Count > 0)
-                        {
-                            UpdatePathPositions(botState.pathPositions);
-                        }
+                        follower.followPathEnabled = botState.followingPath;
+                        Log($"Path following {(botState.followingPath ? "started" : "stopped")} from dashboard");
+                    }
+
+                    if (botState.pathPositions?.Count > 0)
+                    {
+                        await UpdatePathPositions(botState.pathPositions, source);
                     }
                 }
-                catch (Exception ex)
+                else
                 {
-                    Log($"Error updating state: {ex.Message}");
+                    await UpdateServerState();
                 }
             }
-            else if (msg.type == "path_update")
+        }
+        private async Task HandlePathUpdate(object data, ActionSource source)
+        {
+            var pathData = DeserializeData<PathUpdateData>(data);
+            if (pathData?.pathPositions != null)
             {
-                try
+                if (source == ActionSource.Server)
                 {
-                    var data = msg.data as Newtonsoft.Json.Linq.JObject;
-                    if (data != null)
-                    {
-                        var pathPositions = data["pathPositions"].ToObject<List<Vector3Json>>();
-                        UpdatePathPositions(pathPositions);
-                    }
+                    await UpdatePathPositions(pathData.pathPositions, source);
                 }
-                catch (Exception ex)
+                else
                 {
-                    Log($"Error updating path positions: {ex.Message}");
+                    await UpdateServerState();
                 }
             }
-            else if (msg.type == "save_path")
+        }
+        private async Task HandleSavePath(object data, ActionSource source)
+        {
+            var saveData = DeserializeData<SavePathData>(data);
+            if (saveData != null)
             {
-                var data = msg.data as Newtonsoft.Json.Linq.JObject;
-                if (data != null)
+                Log($"Path '{saveData.name}' saved successfully.");
+            }
+        }
+        private async Task HandleLoadPath(object data, ActionSource source)
+        {
+            var loadData = DeserializeData<LoadPathData>(data);
+            if (loadData != null)
+            {
+                Log($"Path '{loadData.name}' loaded successfully.");
+            }
+        }
+        #endregion
+        private T DeserializeData<T>(object data) where T : class
+        {
+            try
+            {
+                if (data is Newtonsoft.Json.Linq.JObject jObject)
                 {
-                    var pathName = data["name"].ToString();
-
-                    Log($"Path '{pathName}' saved successfully.");
+                    return jObject.ToObject<T>();
+                }
+                else
+                {
+                    return JsonConvert.DeserializeObject<T>(JsonConvert.SerializeObject(data));
                 }
             }
-            else if (msg.type == "load_path")
+            catch (Exception ex)
             {
-                var data = msg.data as Newtonsoft.Json.Linq.JObject;
-                if (data != null)
-                {
-                    var pathName = data["name"].ToString();
-
-                    Log($"Path '{pathName}' loaded successfully.");
-                }
+                Log($"Error deserializing data to {typeof(T).Name}: {ex.Message}");
+                return null;
             }
         }
         public async Task UpdateServerState()
         {
+            if (isDisposed) return;
+
             try
             {
                 var currentState = new BotState
@@ -284,114 +460,190 @@ namespace GorillaBot.WalkSimulator.Bot
                     pathPositions = ConvertPathPositionsToVectors(follower.lineRenderers.pathPositions)
                 };
 
-                var content = new StringContent(JsonConvert.SerializeObject(currentState), Encoding.UTF8, "application/json");
-                await client.PostAsync($"{ApiBaseUrl}/botstate", content);
+                var content = new StringContent(
+                    JsonConvert.SerializeObject(currentState),
+                    Encoding.UTF8,
+                    "application/json"
+                );
+
+                var response = await client.PostAsync($"{ApiBaseUrl}/botstate", content);
+                if (!response.IsSuccessStatusCode)
+                {
+                    Log($"Server returned error: {response.StatusCode}");
+                }
             }
             catch (Exception ex)
             {
                 Log($"Error updating server state: {ex.Message}");
             }
         }
-        private void UpdatePathPositions(List<Vector3Json> serverPositions)
+        private async Task UpdatePathPositions(List<Vector3Json> serverPositions, ActionSource source)
         {
-            if (serverPositions == null) return;
-
-            var positions = new List<Vector3>();
-            foreach (var pos in serverPositions)
+            if (serverPositions == null || serverPositions.Count == 0) return;
+            if (source == ActionSource.Server)
             {
-                positions.Add(new Vector3(pos.x, pos.y, pos.z));
+                var positions = new List<Vector3>(serverPositions.Count);
+                foreach (var pos in serverPositions)
+                {
+                    positions.Add(new Vector3(pos.x, pos.y, pos.z));
+                }
+
+                if (!ArePathsEqual(follower.lineRenderers.pathPositions, positions))
+                {
+                    follower.lineRenderers.pathPositions = positions;
+                    follower.lineRenderers.UpdatePathLineRenderer();
+                    Log($"Updated path positions from dashboard: {positions.Count} waypoints");
+                }
             }
-
-            if (!ArePathsEqual(follower.lineRenderers.pathPositions, positions))
+            else
             {
-                follower.lineRenderers.pathPositions = positions;
-                follower.lineRenderers.UpdatePathLineRenderer();
-                Log($"Updated path positions from dashboard: {positions.Count} waypoints");
+                await UpdateServerState();
             }
         }
         private bool ArePathsEqual(List<Vector3> path1, List<Vector3> path2)
         {
-            if (path1.Count != path2.Count) return false;
+            if (path1 == null || path2 == null || path1.Count != path2.Count)
+                return false;
+
             for (int i = 0; i < path1.Count; i++)
             {
-                if (Vector3.Distance(path1[i], path2[i]) > 0.01f) return false;
+                if (Vector3.Distance(path1[i], path2[i]) > 0.01f)
+                    return false;
             }
+
             return true;
         }
-        public async Task AddWaypoint(Vector3 position)
+        public async Task AddWaypoint(Vector3 position, ActionSource source)
         {
+            if (isDisposed) return;
+
             follower.lineRenderers.pathPositions.Add(position);
             follower.lineRenderers.UpdatePathLineRenderer();
             await UpdateServerState();
             Log($"Added waypoint at {position}");
         }
-        public async Task RemoveLastWaypoint()
+        public async Task RemoveLastWaypoint(ActionSource source)
         {
-            var positions = follower.lineRenderers.pathPositions;
-            if (positions.Count > 0)
+            if (isDisposed) return;
+
+            if (source == ActionSource.Server)
             {
-                positions.RemoveAt(positions.Count - 1);
-                follower.lineRenderers.UpdatePathLineRenderer();
-                await UpdateServerState();
-                Log("Removed last waypoint");
-            }
-        }
-        public async Task ClearWaypoints()
-        {
-            follower.lineRenderers.pathPositions.Clear();
-            follower.lineRenderers.UpdatePathLineRenderer();
-            await UpdateServerState();
-            Log("Cleared all waypoints");
-        }
-        public async Task StartPathFollowing()
-        {
-            if (follower.lineRenderers.pathPositions.Count > 0)
-            {
-                follower.followPathEnabled = true;
-                await UpdateServerState();
-                Log("Started path following");
+                var positions = follower.lineRenderers.pathPositions;
+                if (positions.Count > 0)
+                {
+                    positions.RemoveAt(positions.Count - 1);
+                    follower.lineRenderers.UpdatePathLineRenderer();
+                    Log("Removed last waypoint");
+                }
             }
             else
             {
-                Log("Cannot start path following: No waypoints defined");
+                await UpdateServerState();
             }
         }
-        public async Task StopPathFollowing()
+        public async Task ClearWaypoints(ActionSource source)
         {
-            follower.StopPathing();
-            await UpdateServerState();
-            Log("Stopped path following");
+            if (isDisposed) return;
+
+            if (source == ActionSource.Server)
+            {
+                follower.lineRenderers.pathPositions.Clear();
+                follower.lineRenderers.UpdatePathLineRenderer();
+                Log("Cleared all waypoints");
+            }
+            else
+            {
+                await UpdateServerState();
+            }
+        }
+        public async Task StartPathFollowing(ActionSource source)
+        {
+            if (isDisposed) return;
+
+            if (source == ActionSource.Server)
+            {
+                if (follower.lineRenderers.pathPositions.Count > 0)
+                {
+                    follower.followPathEnabled = true;
+                    Log("Started path following");
+                }
+                else
+                {
+                    Log("Cannot start path following: No waypoints defined");
+                }
+            }
+            else
+            {
+                await UpdateServerState();
+            }
+        }
+        public async Task StopPathFollowing(ActionSource source)
+        {
+            if (isDisposed) return;
+
+            if (source == ActionSource.Server)
+            {
+                follower.StopPathing();
+                Log("Stopped path following");
+            }
+            else
+            {
+                await UpdateServerState();
+            }
         }
         private List<Vector3Json> ConvertPathPositionsToVectors(List<Vector3> positions)
         {
-            var result = new List<Vector3Json>();
+            if (positions == null) return new List<Vector3Json>();
+
+            var result = new List<Vector3Json>(positions.Count);
             foreach (var pos in positions)
             {
                 result.Add(new Vector3Json { x = pos.x, y = pos.y, z = pos.z });
             }
+
             return result;
         }
         private void Log(string message)
         {
-            follower.logger.LogInfo($"[DashboardServer] {message}");
-            PlayerFollowerGUI.logMessages.Add($"[DashboardServer] {message}");
+            try
+            {
+                follower.logger.LogInfo($"[DashboardServer] {message}");
+                PlayerFollowerGUI.logMessages.Add($"[DashboardServer] {message}");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[DashboardServer] Logging error: {ex.Message}. Original message: {message}");
+            }
         }
 
-        private class LoadPathResponse
+        private class PathUpdateData
         {
             public List<Vector3Json> pathPositions { get; set; }
         }
+
+        private class SavePathData
+        {
+            public string name { get; set; }
+        }
+
+        private class LoadPathData
+        {
+            public string name { get; set; }
+        }
+
         public class BotState
         {
             public bool followingPath { get; set; }
             public List<Vector3Json> pathPositions { get; set; } = new List<Vector3Json>();
         }
+
         public class Vector3Json
         {
             public float x { get; set; }
             public float y { get; set; }
             public float z { get; set; }
         }
+
         public class DashboardMessage
         {
             public string type { get; set; }

@@ -5,7 +5,7 @@ using System.Text;
 using UnityEngine.Networking;
 using UnityEngine;
 
-namespace GorillaBot.WalkSimulator.Bot
+namespace WalkSimulator.Bot
 {
     public class PlayerFollowerUtils
     {
