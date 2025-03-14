@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Control Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background-color: #333;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            margin: 0;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        .status-online {
+            background-color: #4CAF50;
+        }
+        .status-offline {
+            background-color: #F44336;
+        }
+        .panel {
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .panel h2 {
+            margin-top: 0;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .btn {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #45a049;
+        }
+        .btn-danger {
+            background-color: #F44336;
+        }
+        .btn-danger:hover {
+            background-color: #d32f2f;
+        }
+        .btn-secondary {
+            background-color: #2196F3;
+        }
+        .btn-secondary:hover {
+            background-color: #1976D2;
+        }
+        .path-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+        .path-item {
+            padding: 5px;
+            margin-bottom: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .path-item:hover {
+            background-color: #f5f5f5;
+        }
+        .path-controls {
+            margin-top: 20px;
+        }
+        .coordinate-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .coordinate-input input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            flex: 1;
+        }
+        .coordinate-input label {
+            width: 20px;
+            text-align: center;
+            line-height: 38px;
+            font-weight: bold;
+        }
+        .connection-status {
+            display: flex;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Bot Control Dashboard</h1>
+            <div class="connection-status">
+                <span class="status-indicator status-offline" id="connectionStatus"></span>
+                <span id="connectionStatusText">Offline</span>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>Path Destinations</h2>
+            <div class="path-list" id="pathList">
+                <div class="path-item">No waypoints added yet</div>
+            </div>
+            
+            <div class="coordinate-input">
+                <label for="xCoord">X:</label>
+                <input type="number" id="xCoord" step="0.1" placeholder="X coordinate">
+                <label for="yCoord">Y:</label>
+                <input type="number" id="yCoord" step="0.1" placeholder="Y coordinate">
+                <label for="zCoord">Z:</label>
+                <input type="number" id="zCoord" step="0.1" placeholder="Z coordinate">
+                <button class="btn" id="addCustomWaypoint">Add Custom Waypoint</button>
+            </div>
+            
+            <div class="path-controls">
+                <button class="btn" id="startPathFollowing">Start Path Following</button>
+                <button class="btn btn-danger" id="stopPathFollowing">Stop Path Following</button>
+                <button class="btn btn-secondary" id="removeLastWaypoint">Remove Last Waypoint</button>
+                <button class="btn btn-danger" id="clearWaypoints">Clear All Waypoints</button>
+                <button class="btn" id="savePath">Save Path</button>
+                <button class="btn" id="loadPath">Load Path</button>
+            </div>
+            <div class="path-list" id="presetList">
+                <h2>Available Presets</h2>
+                <div class="path-item">Loading presets...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket;
+        let pathPositions = [];
+        let isConnected = false;
+        let isFollowingPath = false;
+
+        function connectWebSocket() {
+            socket = new WebSocket(`ws://${window.location.hostname}:${window.location.port}`);
+            
+            socket.onopen = function() {
+                console.log("WebSocket connection established");
+                isConnected = true;
+                updateConnectionStatus(true);
+                fetchBotState();
+            };
+            
+            socket.onmessage = function(event) {
+                const message = JSON.parse(event.data);
+                console.log("Received message:", message);
+                
+                if (message.type === "initial_state" || message.type === "state_update") {
+                    updateUI(message.data);
+                } else if (message.type === "path_update") {
+                    updatePathList(message.data.pathPositions);
+                }
+            };
+            
+            socket.onclose = function() {
+                console.log("WebSocket connection closed");
+                isConnected = false;
+                updateConnectionStatus(false);
+                setTimeout(connectWebSocket, 5000);
+            };
+            
+            socket.onerror = function(error) {
+                console.error("WebSocket error:", error);
+                isConnected = false;
+                updateConnectionStatus(false);
+            };
+        }
+        function updateConnectionStatus(connected) {
+            const statusIndicator = document.getElementById("connectionStatus");
+            const statusText = document.getElementById("connectionStatusText");
+            
+            if (connected) {
+                statusIndicator.className = "status-indicator status-online";
+                statusText.textContent = "Connected";
+            } else {
+                statusIndicator.className = "status-indicator status-offline";
+                statusText.textContent = "Disconnected";
+            }
+        }
+        function fetchBotState() {
+            fetch('/api/botstate')
+                .then(response => response.json())
+                .then(data => {
+                    updateUI(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching bot state:', error);
+                });
+        }
+        function updateUI(state) {
+            pathPositions = state.pathPositions || [];
+            isFollowingPath = state.followingPath || false;
+            
+            updatePathList(pathPositions);
+            
+            const startPathBtn = document.getElementById("startPathFollowing");
+            const stopPathBtn = document.getElementById("stopPathFollowing");
+            
+            if (isFollowingPath) {
+                startPathBtn.disabled = true;
+                stopPathBtn.disabled = false;
+            } else {
+                startPathBtn.disabled = false;
+                stopPathBtn.disabled = true;
+            }
+        }
+        function updatePathList(paths) {
+            const pathList = document.getElementById("pathList");
+            pathList.innerHTML = "";
+            
+            if (paths && paths.length > 0) {
+                paths.forEach((point, index) => {
+                    const pathItem = document.createElement("div");
+                    pathItem.className = "path-item";
+                    pathItem.textContent = `Waypoint ${index + 1}: X: ${point.x.toFixed(2)}, Y: ${point.y.toFixed(2)}, Z: ${point.z.toFixed(2)}`;
+                    pathList.appendChild(pathItem);
+                });
+            } else {
+                const emptyItem = document.createElement("div");
+                emptyItem.className = "path-item";
+                emptyItem.textContent = "No waypoints added yet";
+                pathList.appendChild(emptyItem);
+            }
+        }
+        function addCustomWaypoint() {
+            const xCoord = parseFloat(document.getElementById("xCoord").value);
+            const yCoord = parseFloat(document.getElementById("yCoord").value);
+            const zCoord = parseFloat(document.getElementById("zCoord").value);
+            
+            if (isNaN(xCoord) || isNaN(yCoord) || isNaN(zCoord)) {
+                alert("Please enter valid coordinates");
+                return;
+            }
+            
+            const newWaypoint = { x: xCoord, y: yCoord, z: zCoord };
+            pathPositions.push(newWaypoint);
+            updatePathOnServer();
+            document.getElementById("xCoord").value = "";
+            document.getElementById("yCoord").value = "";
+            document.getElementById("zCoord").value = "";
+        }
+        function removeLastWaypoint() {
+            if (pathPositions.length > 0) {
+                pathPositions.pop();
+                updatePathOnServer();
+            }
+        }
+        function clearWaypoints() {
+            pathPositions = [];
+            updatePathOnServer();
+        }
+        function updatePathOnServer() {
+            fetch('/api/paths', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ path: pathPositions })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Path updated successfully:', data);
+            })
+            .catch(error => {
+                console.error('Error updating path:', error);
+            });
+        }
+
+        function startPathFollowing() {
+            if (pathPositions.length === 0) {
+                alert("Please add waypoints before starting path following");
+                return;
+            }
+            
+            fetch('/api/botstate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ followingPath: true })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Started path following:', data);
+                isFollowingPath = true;
+                document.getElementById("startPathFollowing").disabled = true;
+                document.getElementById("stopPathFollowing").disabled = false;
+            })
+            .catch(error => {
+                console.error('Error starting path following:', error);
+            });
+        }
+        function stopPathFollowing() {
+            fetch('/api/botstate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ followingPath: false })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Stopped path following:', data);
+                isFollowingPath = false;
+                document.getElementById("startPathFollowing").disabled = false;
+                document.getElementById("stopPathFollowing").disabled = true;
+            })
+            .catch(error => {
+                console.error('Error stopping path following:', error);
+            });
+        }
+
+        function fetchPresets() {
+            fetch('/api/presets')
+                .then(response => response.json())
+                .then(data => {
+                    updatePresetList(data.presets);
+                })
+                .catch(error => {
+                    console.error('Error fetching presets:', error);
+                });
+        }
+
+        function updatePresetList(presets) {
+            const presetList = document.getElementById("presetList");
+            presetList.innerHTML = "";
+
+            if (presets && presets.length > 0) {
+                presets.forEach((preset) => {
+                    const presetItem = document.createElement("div");
+                    presetItem.className = "path-item";
+                    presetItem.textContent = preset;
+                    presetItem.addEventListener("click", () => loadPath(preset));
+                    presetList.appendChild(presetItem);
+                });
+            } else {
+                const emptyItem = document.createElement("div");
+                emptyItem.className = "path-item";
+                emptyItem.textContent = "No presets available";
+                presetList.appendChild(emptyItem);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            connectWebSocket();
+            fetchPresets(); // Fetch presets on load
+            document.getElementById("addCustomWaypoint").addEventListener("click", addCustomWaypoint);
+            document.getElementById("removeLastWaypoint").addEventListener("click", removeLastWaypoint);
+            document.getElementById("clearWaypoints").addEventListener("click", clearWaypoints);
+            document.getElementById("startPathFollowing").addEventListener("click", startPathFollowing);
+            document.getElementById("stopPathFollowing").addEventListener("click", stopPathFollowing);
+            document.getElementById("savePath").addEventListener("click", savePath);
+            document.getElementById("loadPath").addEventListener("click", loadPath);
+        });
+
+        function savePath() {
+            const name = prompt("Enter a name for the path:");
+            if (name) {
+                fetch('/api/presets', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name, state: { pathPositions } })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Path saved successfully:', data);
+                    fetchPresets(); // Refresh the preset list
+                })
+                .catch(error => {
+                    console.error('Error saving path:', error);
+                });
+            }
+        }
+
+        function loadPath(name) {
+            fetch(`/api/presets/${name}`)
+            .then(response => response.json())
+            .then(data => {
+                console.log('Path loaded successfully:', data);
+                updatePathList(data.pathPositions);
+            })
+            .catch(error => {
+                console.error('Error loading path:', error);
+            });
+        }
+    </script>
+</body>
+</html>

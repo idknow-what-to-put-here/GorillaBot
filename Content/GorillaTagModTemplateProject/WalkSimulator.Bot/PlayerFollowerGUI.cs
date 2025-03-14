@@ -295,6 +295,7 @@ namespace GorillaBot.WalkSimulator.Bot
                 Transform localBody = GetLocalBody();
                 if (localBody == null) return;
                 AddPointAndUpdate(localBody.position);
+                follower.dashboardServer.AddWaypoint(localBody.position);
             }
 
             if (GUILayout.Button("Add Forward Waypoint"))
@@ -313,6 +314,7 @@ namespace GorillaBot.WalkSimulator.Bot
                     newWaypoint = follower.lineRenderers.pathPositions[count - 1] + localBody.forward * 2f;
                 }
                 AddPointAndUpdate(newWaypoint);
+                follower.dashboardServer.AddWaypoint(newWaypoint);
             }
 
             if (GUILayout.Button(follower.waitingForJumpStart ? "Set Jump Start" : "Set Jump End"))
@@ -355,6 +357,7 @@ namespace GorillaBot.WalkSimulator.Bot
                     positions.RemoveAt(positions.Count - 1);
                     follower.lineRenderers.UpdatePathLineRenderer();
                 }
+                follower.dashboardServer.RemoveLastWaypoint();
             }
 
             if (GUILayout.Button("Start Path Following"))
@@ -363,11 +366,13 @@ namespace GorillaBot.WalkSimulator.Bot
                 {
                     follower.followPathEnabled = true;
                 }
+                follower.dashboardServer.StartPathFollowing();
             }
 
             if (GUILayout.Button("Stop Path Following"))
             {
                 follower.StopPathing();
+                follower.dashboardServer.StopPathFollowing();
             }
 
             GUILayout.Space(10);

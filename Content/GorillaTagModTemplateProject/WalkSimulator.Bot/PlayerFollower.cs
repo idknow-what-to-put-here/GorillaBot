@@ -22,12 +22,14 @@ using static UnityEngine.UI.DefaultControls;
 using UnityEngine.AI;
 using WalkSimulator;
 using static GorillaBot.WalkSimulator.Bot.PlayerFollowerUtils;
+using System.Threading.Tasks;
 
 namespace GorillaBot.WalkSimulator.Bot
 {
     public class PlayerFollower : MonoBehaviour
     {
         private PlayerFollowerGUI gui;
+        public DashboardServer dashboardServer;
         public MovementRecorder movementRecorder;
         public ConfigEntry<string> DiscordWebhookUrl;
 
@@ -144,6 +146,10 @@ namespace GorillaBot.WalkSimulator.Bot
             pathPositions = new List<Vector3>();
 
             InitializeHardcodedPresets();
+
+
+            dashboardServer = new DashboardServer(this);
+            dashboardServer.Initialize();
         }
         public void ScanActiveObjects()
         {
@@ -248,6 +254,10 @@ namespace GorillaBot.WalkSimulator.Bot
             {
                 if (lineRenderers.pathLine.GameObject != null) Destroy(lineRenderers.pathLine.GameObject);
                 if (lineRenderers.directionLine.GameObject != null) Destroy(lineRenderers.directionLine.GameObject);
+            }
+            if (dashboardServer != null)
+            {
+                dashboardServer.Shutdown();
             }
             /*
             if (!string.IsNullOrEmpty(DiscordWebhookUrl.Value))
@@ -476,6 +486,7 @@ namespace GorillaBot.WalkSimulator.Bot
             Transform localBody = Rig.Instance.body;
             lineRenderers.ClearPath(localBody);
             logger.LogInfo("Pathing stopped.");
+            Task.Run(async () => await dashboardServer.UpdateServerState());
         }
         #endregion
         #region Hand
