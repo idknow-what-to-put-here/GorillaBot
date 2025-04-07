@@ -79,14 +79,14 @@ namespace WalkSimulator.Rigging
 
         private void LateUpdate()
         {
-            if (GorillaLocomotion.Player.Instance == null ||
-                GorillaLocomotion.Player.Instance.headCollider == null || head == null)
+            if (GorillaLocomotion.GTPlayer.Instance == null ||
+                GorillaLocomotion.GTPlayer.Instance.headCollider == null || head == null)
             {
                 return; // Exit if required components are missing
             }
 
             cameraObject.transform.position =
-                GorillaLocomotion.Player.Instance.headCollider.transform.TransformPoint(
+                GorillaLocomotion.GTPlayer.Instance.headCollider.transform.TransformPoint(
                     offset);
             cameraObject.transform.forward = head.forward;
 
@@ -95,7 +95,7 @@ namespace WalkSimulator.Rigging
                 float mouseXDelta = Mouse.current.delta.value.x / 10f;
                 float mouseYDelta = Mouse.current.delta.value.y / 10f;
 
-                GorillaLocomotion.Player.Instance.Turn(mouseXDelta);
+                GorillaLocomotion.GTPlayer.Instance.Turn(mouseXDelta);
 
                 Vector3 eulerAngles = GorillaTagger.Instance.offlineVRRig.headConstraint.eulerAngles;
                 eulerAngles.x -= mouseYDelta;
@@ -112,7 +112,7 @@ namespace WalkSimulator.Rigging
 
                 eulerAngles.y += 90f;
                 thirpyTarget.localEulerAngles = new Vector3(eulerAngles.x, 0f, 0f);
-                GorillaLocomotion.Player.Instance.headCollider.transform.localEulerAngles =
+                GorillaLocomotion.GTPlayer.Instance.headCollider.transform.localEulerAngles =
                     new Vector3(eulerAngles.x, 0f, 0f);
             }
         }

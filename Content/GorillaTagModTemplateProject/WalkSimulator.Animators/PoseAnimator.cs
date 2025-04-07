@@ -145,7 +145,7 @@ namespace WalkSimulator.Animators
             lookAtRight = head.forward;
 
             secondary.targetPosition =
-                secondary.DefaultPosition + Vector3.up * 0.2f * GorillaLocomotion.Player.Instance.scale;
+                secondary.DefaultPosition + Vector3.up * 0.2f * GorillaLocomotion.GTPlayer.Instance.scale;
             secondary.lookAt = secondary.targetPosition + head.forward;
             secondary.up = body.right * (main.isLeft ? -1f : 1f);
         }

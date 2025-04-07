@@ -36,11 +36,11 @@ namespace WalkSimulator.Tools
 
         private void FixedUpdate()
         {
-            if (material != null && GorillaLocomotion.Player.Instance != null)
+            if (material != null && GorillaLocomotion.GTPlayer.Instance != null)
             {
                 material.color = color;
                 transform.localScale = Vector3.one * size *
-                                       GorillaLocomotion.Player.Instance.scale;
+                                       GorillaLocomotion.GTPlayer.Instance.scale;
             }
         }
 

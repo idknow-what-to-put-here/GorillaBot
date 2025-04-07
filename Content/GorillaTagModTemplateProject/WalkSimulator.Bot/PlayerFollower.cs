@@ -83,6 +83,9 @@ namespace WalkSimulator.Bot
             "Environment Objects/LocalObjects_Prefab/Forest/Terrain/campgroundstructure/",
             "Environment Objects/LocalObjects_Prefab/Forest/Terrain/slide/",
             "Environment Objects/LocalObjects_Prefab/Forest/Terrain/pitgeo/",
+            "System Scripts/ZoneGraph/City",
+            "System Scripts/ZoneGraph/TreeRoom",
+            //"Environment Objects/LocalObjects_Prefab/Forest/Props/"
         };
 
         // Flee
@@ -96,6 +99,15 @@ namespace WalkSimulator.Bot
         private Bounds bounds;
         public bool isSelectingPathPoints = false;
         public List<Vector3> selectedPoints = new List<Vector3>();
+
+        // Colissions
+        public string collisionState = "No Collisions";
+        private Dictionary<GameObject, bool> leftHandCollisions = new Dictionary<GameObject, bool>();
+        private Dictionary<GameObject, bool> rightHandCollisions = new Dictionary<GameObject, bool>();
+        public bool objectsInitialized = false;
+        private readonly string[] blacklistTerms = {  }; 
+        private readonly string[] blacklistPaths = { "Player Objects", "System Scripts/ZoneGraph/Tutorial", "System Scripts/ZoneGraph/Forest", "System Scripts/ZoneGraph/Clouds" };
+        private Dictionary<string, Transform> pathTransformCache = new Dictionary<string, Transform>();
 
         private void Awake()
         {
@@ -142,6 +154,9 @@ namespace WalkSimulator.Bot
 
             dashboardServer = new DashboardServer(this);
             dashboardServer.Initialize();
+
+            Invoke("InitializeObjects", 1.0f);
+
         }
         public void ScanActiveObjects()
         {
@@ -181,8 +196,14 @@ namespace WalkSimulator.Bot
         }
         private void FixedUpdate()
         {
+            if (Rig.Instance != null && Rig.Instance.active)
+            {
+                CheckCollisions();
+            }
+
             movementRecorder.FixedUpdate();
             Transform localBody = Rig.Instance.body;
+
 
             /*
             if (Time.time - lastWaypointUpdateTime >= WAYPOINT_UPDATE_INTERVAL)
@@ -281,7 +302,7 @@ namespace WalkSimulator.Bot
         #region Tagging
         public void StartTagging()
         {
-            taggedPlayer = GetRandomNonTaggedPlayer();
+            taggedPlayer = PlayerFollowerUtils.Tagging.GetRandomNonTaggedPlayer();
 
             if (taggedPlayer != null)
             {
@@ -312,88 +333,6 @@ namespace WalkSimulator.Bot
             if (targetTransform == null || localBody == null) { return; }
             lineRenderers.UpdateLineRenderers(localBody, targetTransform);
             UpdateMovement(localBody, targetTransform);
-        }
-        public Player GetRandomNonTaggedPlayer()
-        {
-            Player[] playerList = PhotonNetwork.PlayerList;
-
-            if (playerList == null || playerList.Length == 0)
-            {
-                return null;
-            }
-
-            List<Player> availablePlayers = new List<Player>();
-
-            foreach (Player player in playerList)
-            {
-                var vrrig = GorillaGameManager.instance.FindPlayerVRRig(player);
-                if (vrrig != null && !PlayerIsTagged(vrrig) && player != PhotonNetwork.LocalPlayer)
-                {
-                    availablePlayers.Add(player);
-                }
-            }
-
-            if (availablePlayers.Count == 0)
-            {
-                return null;
-            }
-
-            return availablePlayers[UnityEngine.Random.Range(0, availablePlayers.Count)];
-        }
-        public Player GetRandomPlayer(bool includeSelf)
-        {
-            Player[] playerList = PhotonNetwork.PlayerList;
-
-            if (playerList == null || playerList.Length == 0)
-            {
-                return null;
-            }
-
-            List<Player> availablePlayers = new List<Player>(playerList);
-
-            if (!includeSelf)
-            {
-                availablePlayers.Remove(PhotonNetwork.LocalPlayer);
-            }
-
-            if (availablePlayers.Count == 0)
-            {
-                return null;
-            }
-
-            return availablePlayers[UnityEngine.Random.Range(0, availablePlayers.Count)];
-        }
-        public static bool PlayerIsTagged(VRRig who)
-        {
-            if (who == null || who.mainSkin == null || who.mainSkin.material == null)
-            {
-                return false;
-            }
-
-            string text = who.mainSkin.material.name.ToLower();
-            return text.Contains("fected") || text.Contains("it") || text.Contains("stealth") || !who.nameTagAnchor.activeSelf;
-        }
-        public static List<NetPlayer> InfectedList()
-        {
-            List<NetPlayer> list = new List<NetPlayer>();
-            string text = GorillaGameManager.instance.GameModeName().ToLower();
-            if (text.Contains("infection") || text.Contains("tag"))
-            {
-                GorillaTagManager component = GameObject.Find("GT Systems/GameModeSystem/Gorilla Tag Manager").GetComponent<GorillaTagManager>();
-                bool isCurrentlyTag = component.isCurrentlyTag;
-                if (isCurrentlyTag)
-                {
-                    list.Add(component.currentIt);
-                }
-                else
-                {
-                    foreach (NetPlayer netPlayer in component.currentInfected)
-                    {
-                        list.Add(netPlayer);
-                    }
-                }
-            }
-            return list;
         }
         #endregion
         #region Following
@@ -560,7 +499,7 @@ namespace WalkSimulator.Bot
             foreach (Player player in PhotonNetwork.PlayerList)
             {
                 var vrrig = GorillaGameManager.instance.FindPlayerVRRig(player);
-                if (vrrig != null && PlayerIsTagged(vrrig))
+                if (vrrig != null && PlayerFollowerUtils.Tagging.PlayerIsTagged(vrrig))
                 {
                     taggedPlayerPositions.Add(vrrig.transform.position);
                 }
@@ -739,7 +678,7 @@ namespace WalkSimulator.Bot
                 float turnSpeed = Mathf.Min(angleDifference, MAX_TURN_SPEED);
                 float turnAmount = turnDirection * turnSpeed / TURN_SPEED_DIVISOR;
 
-                GorillaLocomotion.Player.Instance.Turn(turnAmount);
+                GorillaLocomotion.GTPlayer.Instance.Turn(turnAmount);
             }
         }
         private void TurnTowardsTargetPosition(Transform localBody, Vector3 targetPoint)
@@ -756,7 +695,7 @@ namespace WalkSimulator.Bot
                 float turnSpeed = Mathf.Min(angleDifference, MAX_TURN_SPEED);
                 float turnAmount = turnDirection * turnSpeed / TURN_SPEED_DIVISOR;
 
-                GorillaLocomotion.Player.Instance.Turn(turnAmount);
+                GorillaLocomotion.GTPlayer.Instance.Turn(turnAmount);
             }
         }
         private Vector3 AvoidObstaclesTaggers(Vector3 currentPosition, Vector3 desiredDirection)
@@ -845,6 +784,320 @@ namespace WalkSimulator.Bot
 
             return desiredDirection;
         }
+        #region Collisions
+        public void ScanActiveObjects2()
+        {
+            activeObjects.Clear();
+            pathTransformCache.Clear();
+            GameObject[] rootObjects = SceneManager.GetActiveScene().GetRootGameObjects();
+
+            foreach (string path in blacklistPaths)
+            {
+                Transform pathTransform = GameObject.Find(path)?.transform;
+                if (pathTransform != null)
+                {
+                    pathTransformCache[path] = pathTransform;
+                }
+            }
+
+            foreach (string path in obstaclePaths)
+            {
+                Transform pathTransform = GameObject.Find(path)?.transform;
+                if (pathTransform != null)
+                {
+                    pathTransformCache[path] = pathTransform;
+                }
+            }
+
+            foreach (GameObject root in rootObjects)
+            {
+                if (blacklistPaths.Contains(root.name))
+                {
+                    Debug.Log($"Skipping blacklisted root object: {root.name}");
+                    continue;
+                }
+
+                Stack<Transform> stack = new Stack<Transform>();
+                stack.Push(root.transform);
+
+                while (stack.Count > 0)
+                {
+                    Transform current = stack.Pop();
+                    if (current.gameObject.activeInHierarchy)
+                    {
+                        if (current == transform || (Rig.Instance != null && current == Rig.Instance.body)) { continue; }
+
+                        string objName = current.gameObject.name.ToLower();
+                        bool isBlacklisted = blacklistTerms.Any(term => objName.Contains(term.ToLower()));
+                        if (isBlacklisted) continue;
+
+                        bool isInBlacklistedPath = false;
+                        foreach (string path in blacklistPaths)
+                        {
+                            if (pathTransformCache.TryGetValue(path, out Transform pathTransform))
+                            {
+                                if (current.IsChildOf(pathTransform))
+                                {
+                                    isInBlacklistedPath = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (isInBlacklistedPath) continue;
+
+                        bool isObstacle = false;
+                        foreach (string path in obstaclePaths)
+                        {
+                            if (pathTransformCache.TryGetValue(path, out Transform pathTransform))
+                            {
+                                if (current.IsChildOf(pathTransform))
+                                {
+                                    isObstacle = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (isObstacle && current.GetComponent<Collider>() != null)
+                        {
+                            activeObjects.Add(current.gameObject);
+                        }
+
+                        foreach (Transform child in current)
+                        {
+                            stack.Push(child);
+                        }
+                    }
+                }
+            }
+        }
+        public void InitializeObjects()
+        {
+            try
+            {
+                if (Rig.Instance != null)
+                {
+                    ScanActiveObjects2();
+
+                    objectsInitialized = (activeObjects.Count > 0 && Rig.Instance.leftHand != null && Rig.Instance.rightHand != null);
+
+                    if (objectsInitialized)
+                    {
+                        Debug.Log($"Successfully initialized objects. Found {activeObjects.Count} active objects to track.");
+                        Debug.Log($"Blacklisted terms: {string.Join(", ", blacklistTerms)}");
+                        Debug.Log($"Blacklisted paths: {string.Join(", ", blacklistPaths)}");
+                    }
+                    else
+                    {
+                        Debug.LogWarning("Not all objects could be found or initialized");
+                    }
+                }
+                else
+                {
+                    Debug.LogError("Rig.Instance is null");
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError("Error initializing objects with Rig: " + e.Message);
+            }
+        }
+        public void CheckCollisions()
+        {
+            if (!objectsInitialized)
+            {
+                collisionState = "Objects not initialized";
+                return;
+            }
+
+            leftHandCollisions.Clear();
+            rightHandCollisions.Clear();
+
+            bool anyCollision = false;
+
+            foreach (GameObject obj in activeObjects)
+            {
+                if (obj == null) continue;
+
+                bool leftHand = IsTouchingObject(Rig.Instance.leftHand.gameObject, obj);
+                bool rightHand = IsTouchingObject(Rig.Instance.rightHand.gameObject, obj);
+
+                if (leftHand)
+                {
+                    leftHandCollisions[obj] = true;
+                    anyCollision = true;
+                }
+
+                if (rightHand)
+                {
+                    rightHandCollisions[obj] = true;
+                    anyCollision = true;
+                }
+            }
+
+            UpdateCollisionState();
+
+            if (anyCollision)
+            {
+                ApplyCollisionEffects();
+            }
+            else
+            {
+                ResetCollisionEffects();
+            }
+        }
+        private bool IsTouchingObject(GameObject hand, GameObject other)
+        {
+            if (hand == null || other == null)
+            {
+                Debug.LogWarning($"IsTouchingObject called with null objects: hand={hand != null}, other={other != null}");
+                return false;
+            }
+
+            try
+            {
+                Collider[] handColliders = hand.GetComponentsInChildren<Collider>();
+                Collider[] otherColliders = other.GetComponentsInChildren<Collider>();
+
+                //if (handColliders.Length == 0 || otherColliders.Length == 0)
+                //{
+                    return SimplifiedCollisionCheck(hand, other);
+               // }
+               /*
+                foreach (Collider handCol in handColliders)
+                {
+                    foreach (Collider otherCol in otherColliders)
+                    {
+                        if (handCol.isTrigger || otherCol.isTrigger) { continue; }
+                        if (handCol.bounds.Intersects(otherCol.bounds))
+                        {
+                            Vector3 direction;
+                            float distance;
+
+                            if (Physics.ComputePenetration(handCol, handCol.transform.position, handCol.transform.rotation, otherCol, otherCol.transform.position, otherCol.transform.rotation, out direction, out distance))
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+
+                return false;
+               */
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error in IsTouchingObject: {e.Message}");
+                return false;
+            }
+        }
+        private bool SimplifiedCollisionCheck(GameObject hand, GameObject other)
+        {
+            if (hand == null || other == null)
+            {
+                Debug.LogWarning($"IsTouchingObject called with null objects: hand={hand != null}, other={other != null}");
+                return false;
+            }
+
+            try
+            {
+                const float maxDistance = 0.3f; // 1.0F for big things // 0.3F for super close
+                Vector3 handPosition = hand.transform.position;
+                Collider[] nearbyColliders = Physics.OverlapSphere(handPosition, maxDistance);
+                foreach (var col in nearbyColliders)
+                {
+                    if (col.gameObject == other || col.transform.IsChildOf(other.transform))
+                    {
+                        return true;
+                    }
+                }
+
+                Vector3 primaryDirection = other.transform.position - handPosition;
+                float actualDistance = primaryDirection.magnitude;
+
+                if (actualDistance <= maxDistance * 0.7f) // 1.5F for big things
+                {
+                    Ray centerRay = new Ray(handPosition, primaryDirection.normalized);
+                    if (Physics.Raycast(centerRay, out RaycastHit hitInfo, maxDistance))
+                    {
+                        if (hitInfo.collider != null && (hitInfo.collider.gameObject == other || hitInfo.transform.IsChildOf(other.transform)))
+                        {
+                            return true;
+                        }
+                    }
+
+                    Vector3[] directions = new Vector3[]
+                    {
+                        Vector3.up,
+                        Vector3.down,
+                        Vector3.left,
+                        Vector3.right,
+                        Vector3.forward,
+                        Vector3.back,
+                        primaryDirection.normalized + Vector3.up * 0.1f,
+                        primaryDirection.normalized + Vector3.down * 0.1f,
+                        primaryDirection.normalized + Vector3.left * 0.1f,
+                        primaryDirection.normalized + Vector3.right * 0.1f,
+                        primaryDirection.normalized + Vector3.forward * 0.1f,
+                        primaryDirection.normalized + Vector3.back * 0.1f
+                    };
+
+                    foreach (Vector3 dir in directions)
+                    {
+                        Ray ray = new Ray(handPosition, dir.normalized);
+                        if (Physics.Raycast(ray, out hitInfo, maxDistance))
+                        {
+                            if (hitInfo.collider != null && (hitInfo.collider.gameObject == other || hitInfo.transform.IsChildOf(other.transform)))
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+
+                return false;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"Error in SimplifiedCollisionCheck: {e.Message}");
+                return false;
+            }
+        }
+        private void UpdateCollisionState()
+        {
+            List<string> collisions = new List<string>();
+
+            foreach (var collision in leftHandCollisions)
+            {
+                if (collision.Value)
+                {
+                    collisions.Add($"Left Hand → {collision.Key.name}");
+                }
+            }
+
+            foreach (var collision in rightHandCollisions)
+            {
+                if (collision.Value)
+                {
+                    collisions.Add($"Right Hand → {collision.Key.name}");
+                }
+            }
+
+            if (collisions.Count > 0)
+            {
+                collisionState = string.Join(", ", collisions);
+            }
+            else
+            {
+                collisionState = "No Collisions";
+            }
+        }
+        private void ApplyCollisionEffects()
+        {
+            //Debug.Log("TOUCHED OBJECTS: " + collisionState);
+        }
+        private void ResetCollisionEffects() { }
+        #endregion
         #endregion
         #region Preset Management
         [Serializable]
@@ -1109,6 +1362,7 @@ namespace WalkSimulator.Bot
             };
         }
         #endregion
+        #region NavMesh
         public void PathfindTo(Vector3 destination)
         {
             if (!isSelectingPathPoints)
@@ -1116,7 +1370,7 @@ namespace WalkSimulator.Bot
                 BuildNavMesh();
                 isSelectingPathPoints = true;
                 selectedPoints.Clear();
-                selectedPoints.Add(GorillaLocomotion.Player.Instance.bodyCollider.transform.position);
+                selectedPoints.Add(GorillaLocomotion.GTPlayer.Instance.bodyCollider.transform.position);
                 logger.LogInfo("Started path point selection. Click points to create path");
 
                 NavMeshPath path = new NavMeshPath();
@@ -1251,5 +1505,6 @@ namespace WalkSimulator.Bot
                 logger.LogError("Failed to build NavMesh");
             }
         }
+        #endregion
     }
 }

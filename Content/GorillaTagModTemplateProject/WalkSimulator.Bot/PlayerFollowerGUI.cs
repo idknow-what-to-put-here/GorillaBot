@@ -7,6 +7,7 @@ using System.IO;
 using System;
 using static WalkSimulator.Bot.PlayerFollower;
 using static WalkSimulator.Bot.PlayerFollowerUtils;
+using System.Text.RegularExpressions;
 
 namespace WalkSimulator.Bot
 {
@@ -377,6 +378,13 @@ namespace WalkSimulator.Bot
                 follower.PathfindTo(cityDestination);
             }
 
+            if (GUILayout.Button("AddPathPoint"))
+            {
+                Transform localBody = GetLocalBody();
+                if (localBody == null) return;
+              //  follower.AddPathPoint(localBody.position);
+            }
+
             GUILayout.EndVertical();
         }
         #region Presets
@@ -542,6 +550,23 @@ namespace WalkSimulator.Bot
                     follower.avoidObjects = false;
                 }
             }
+
+            if (!test113)
+            {
+                if (GUILayout.Button("off"))
+                {
+                    test113 = true;
+                }
+            }
+            else
+            {
+                if (GUILayout.Button("on"))
+                {
+                    test113 = false;
+                }
+                AutoBranch();
+            }
+
             if (GUILayout.Button("Send Logs"))
             {
                 string logs = Logging.GetFullLogText();
@@ -552,6 +577,65 @@ namespace WalkSimulator.Bot
                     sender.Initialize(follower.DiscordWebhookUrl.Value, logs);
                 }
             }
+
+            GUILayout.EndVertical();
+            #endregion
+            #region Collisions
+            GUILayout.BeginVertical(sectionStyle);
+            GUILayout.Label("Collision Detection", headerStyle);
+
+            GUILayout.BeginVertical(GUI.skin.box);
+
+            string statusText = "System Status: ";
+            if (follower.objectsInitialized) { statusText += "Initialized"; }
+            else { statusText += "Not Fully Initialized"; }
+            GUILayout.Label(statusText);
+
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"Tracking {follower.activeObjects.Count} objects", GUILayout.Width(200));
+
+            GUILayout.EndHorizontal();
+
+            if (!follower.objectsInitialized)
+            {
+                GUILayout.BeginVertical(GUI.skin.box);
+                GUILayout.Label("Missing Components:");
+                if (Rig.Instance == null) GUILayout.Label("Rig Instance");
+                if (Rig.Instance != null && Rig.Instance.leftHand.gameObject == null) GUILayout.Label("Left Hand");
+                if (Rig.Instance != null && Rig.Instance.rightHand.gameObject == null) GUILayout.Label("Right Hand");
+                GUILayout.EndVertical();
+            }
+            GUILayout.EndVertical();
+
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label("Current Collision Status:");
+
+            if (follower.collisionState == "No Collisions")
+            {
+                GUILayout.Label("No Collisions Detected", GUILayout.Height(25));
+            }
+            else if (follower.collisionState == "Objects not initialized")
+            {
+                GUILayout.Label("System Not Initialized", GUILayout.Height(25));
+            }
+            else
+            {
+                string[] collisions = follower.collisionState.Split(',');
+                GUILayout.Label("Collisions Detected:");
+
+                GUILayout.BeginVertical(GUI.skin.box);
+                foreach (string collision in collisions)
+                {
+                    GUILayout.Label("* " + collision.Trim());
+                }
+                GUILayout.EndVertical();
+            }
+            GUILayout.EndVertical();
+
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Initialize System", GUILayout.Height(30))) { follower.InitializeObjects(); }
+            if (GUILayout.Button("Force Collision Check", GUILayout.Height(30))) { follower.CheckCollisions(); }
+            GUILayout.EndHorizontal();
 
             GUILayout.EndVertical();
             #endregion
@@ -691,6 +775,107 @@ namespace WalkSimulator.Bot
             GUILayout.EndVertical();
             #endregion
         }
+        public bool test113 = false;
+        private static List<Vector3> posArchive = null;
+        public static Vector3[] GetAllTreeBranchPositions()
+        {
+            if (posArchive != null)
+                return posArchive.ToArray();
+
+            posArchive = new List<Vector3> { };
+
+            Vector3[] TreeBranchOffsets = new Vector3[]
+            {
+                new Vector3(-2.383f, 3.784f, 0.738f),
+                new Vector3(1.55f, 5.559f, -1.56f),
+                new Vector3(-2.225f, 7.214f, 0.063f),
+                new Vector3(1.365f, 6.62f, 0.82f),
+                new Vector3(0.405f, 8.865f, -2.759f),
+                new Vector3(-2.227f, 9.763f, 2.071f),
+                new Vector3(2.421f, 10.91f, 1.313f),
+                new Vector3(1.618f, 13.169f, -1.216f),
+                new Vector3(2.175f, 12.959f, -0.229f),
+                new Vector3(1.855f, 13.837f, 1.215f),
+                new Vector3(-0.265f, 14.953f, 2.935f),
+                new Vector3(-2.049f, 14.962f, -1.708f),
+                new Vector3(-1.249f, 18.93f, -1.62f),
+            };
+
+            string[] SmallTreeTargets = new string[] {
+                "Environment Objects/LocalObjects_Prefab/Forest/Terrain/SmallTrees/Group1",
+                "Environment Objects/LocalObjects_Prefab/Forest/Terrain/SmallTrees/Group2"
+            };
+
+            foreach (string SmallTreeTarget in SmallTreeTargets)
+            {
+                GameObject TreeGroupGO = GameObject.Find(SmallTreeTarget);
+
+                for (int i = 0; i < TreeGroupGO.transform.childCount; i++)
+                {
+                    GameObject v = TreeGroupGO.transform.GetChild(i).gameObject;
+
+                    Vector3 oldlocalscale = v.transform.localScale;
+                    v.transform.localScale *= 5;
+
+                    foreach (Vector3 TreeBranchOffset in TreeBranchOffsets)
+                        posArchive.Add(v.transform.TransformPoint(TreeBranchOffset));
+
+                    v.transform.localScale = oldlocalscale;
+                }
+            }
+
+            return posArchive.ToArray();
+        }
+
+        public static Vector3 leftPos = Vector3.zero;
+        public static Vector3 rightPos = Vector3.zero;
+        public static void AutoBranch()
+        {
+
+            float dist = float.MaxValue;
+            Vector3 closeDist = Vector3.zero;
+            Vector3 compareDist = Rig.Instance.body.transform.position;
+
+            foreach (Vector3 treeBranchPos in GetAllTreeBranchPositions())
+            {
+                float foundDist = Vector3.Distance(compareDist, treeBranchPos);
+                if (foundDist < dist)
+                {
+                    dist = foundDist;
+                    closeDist = treeBranchPos;
+                }
+            }
+
+            if (dist < 3f)
+                rightPos = Vector3.Lerp(rightPos, closeDist, 0.2f);
+            else
+                rightPos = Vector3.Lerp(rightPos, Rig.Instance.rightHand.controller.position, 0.2f);
+
+            Rig.Instance.rightHand.controller.position = rightPos;
+
+            Vector3 lastFoundDist = closeDist;
+            dist = float.MaxValue;
+            closeDist = Vector3.zero;
+            compareDist = Rig.Instance.body.transform.position;
+
+            foreach (Vector3 treeBranchPos in GetAllTreeBranchPositions())
+            {
+                float foundDist = Vector3.Distance(compareDist, treeBranchPos);
+                if (foundDist < dist && treeBranchPos != lastFoundDist)
+                {
+                    dist = foundDist;
+                    closeDist = treeBranchPos;
+                }
+            }
+
+            if (dist < 3f)
+                leftPos = Vector3.Lerp(leftPos, closeDist, 0.2f);
+            else
+                leftPos = Vector3.Lerp(leftPos, Rig.Instance.leftHand.controller.position, 0.2f);
+
+            Rig.Instance.leftHand.controller.position = leftPos;
+        }
+
         private void DrawLogsTab()
         {
             GUILayout.BeginVertical(sectionStyle);

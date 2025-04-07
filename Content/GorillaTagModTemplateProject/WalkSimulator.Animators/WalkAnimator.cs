@@ -90,7 +90,7 @@ namespace WalkSimulator.Animators
             onJumpCooldown = true;
             jumpTime = Time.time;
             rig.active = false;
-            rigidbody.AddForce(Vector3.up * 225f * Player.Instance.scale, ForceMode.Impulse);
+            rigidbody.AddForce(Vector3.up * 225f * GorillaLocomotion.GTPlayer.Instance.scale, ForceMode.Impulse);
         }
         public void JumpPath(float requiredHeight)
         {
@@ -102,7 +102,7 @@ namespace WalkSimulator.Animators
             float gravity = Mathf.Abs(Physics.gravity.y);
             float jumpVelocity = Mathf.Sqrt(2 * gravity * requiredHeight);
 
-            rigidbody.AddForce(Vector3.up * jumpVelocity * Player.Instance.scale, ForceMode.Impulse);
+            rigidbody.AddForce(Vector3.up * jumpVelocity * GorillaLocomotion.GTPlayer.Instance.scale, ForceMode.Impulse);
         }
         public void JumpPath(Vector3 start, Vector3 target, float jumpAngle = 45f)
         {
@@ -124,7 +124,7 @@ namespace WalkSimulator.Animators
             if (D < 0.1f)
             {
                 float jumpVelocity = Mathf.Sqrt(2 * g * Mathf.Max(1f, y));
-                rigidbody.AddForce(Vector3.up * jumpVelocity * Player.Instance.scale, ForceMode.Impulse);
+                rigidbody.AddForce(Vector3.up * jumpVelocity * GorillaLocomotion.GTPlayer.Instance.scale, ForceMode.Impulse);
                 return;
             }
 
@@ -141,7 +141,7 @@ namespace WalkSimulator.Animators
             float v = Mathf.Sqrt((g * D * D) / (2 * cosTheta * cosTheta * denominator));
             Vector3 jumpDir = horizontalDisplacement.normalized;
             Vector3 initialVelocity = jumpDir * v * cosTheta + Vector3.up * v * sinTheta;
-            rigidbody.AddForce(initialVelocity * Player.Instance.scale, ForceMode.Impulse);
+            rigidbody.AddForce(initialVelocity * GorillaLocomotion.GTPlayer.Instance.scale, ForceMode.Impulse);
         }
 
         public void MoveBody()
@@ -161,7 +161,7 @@ namespace WalkSimulator.Animators
             float heightOffset = Extensions.Map(Mathf.Sin(cycleSpeed), -1f, 1f, minHeight * randomHeightOffsetFactor, maxHeight * randomHeightOffsetFactor);
 
             targetHeight = heightOffset;
-            Vector3 targetPosition = rig.lastGroundPosition + Vector3.up * targetHeight * Player.Instance.scale;
+            Vector3 targetPosition = rig.lastGroundPosition + Vector3.up * targetHeight * GorillaLocomotion.GTPlayer.Instance.scale;
 
             Vector3 movementDirection = body.TransformDirection(InputHandler.inputDirectionNoY);
             movementDirection.y = 0f;
@@ -171,7 +171,7 @@ namespace WalkSimulator.Animators
                 movementDirection = Vector3.ProjectOnPlane(movementDirection, rig.lastNormal);
             }
 
-            movementDirection *= Player.Instance.scale;
+            movementDirection *= GorillaLocomotion.GTPlayer.Instance.scale;
             float currentSpeed = IsSprinting ? (speed * 3f) : speed;
             targetPosition += movementDirection * currentSpeed / 10f;
 
@@ -229,7 +229,7 @@ namespace WalkSimulator.Animators
         {
             leftHand.grounded = false;
             rightHand.grounded = false;
-            Vector3 handOffset = Vector3.up * 0.2f * Player.Instance.scale;
+            Vector3 handOffset = Vector3.up * 0.2f * GorillaLocomotion.GTPlayer.Instance.scale;
             leftHand.targetPosition = leftHand.DefaultPosition;
             rightHand.targetPosition = rightHand.DefaultPosition + handOffset;
         }
@@ -261,7 +261,7 @@ namespace WalkSimulator.Animators
 
         private void UpdateHitInfo(HandDriver hand)
         {
-            float scale = Player.Instance.scale;
+            float scale = GorillaLocomotion.GTPlayer.Instance.scale;
             float raycastDistance = raycastDistanceMultiplier * scale;
             Vector3 smoothedGroundPosition = rig.smoothedGroundPosition;
             Vector3 groundNormal = rig.lastNormal;
@@ -276,7 +276,7 @@ namespace WalkSimulator.Animators
             Vector3 raycastStartPoint = Vector3.ProjectOnPlane(hand.DefaultPosition - smoothedGroundPosition + handOffsetDirection, groundNormal);
             raycastStartPoint += smoothedGroundPosition + groundNormal * 0.3f * scale;
 
-            if (!Physics.Raycast(raycastStartPoint, -groundNormal, out RaycastHit hitInfo, raycastDistance, Player.Instance.locomotionEnabledLayers))
+            if (!Physics.Raycast(raycastStartPoint, -groundNormal, out RaycastHit hitInfo, raycastDistance, GorillaLocomotion.GTPlayer.Instance.locomotionEnabledLayers))
             {
                 if (NotMoving)
                 {
@@ -298,7 +298,7 @@ namespace WalkSimulator.Animators
             float stepHeightInfluence = Extensions.Map(verticalInfluence, 0f, 1f, 0.1f, 0.6f) * randomStepHeightInfluenceFactor;
             float stepLengthInfluence = Extensions.Map(forwardInfluence, 0f, 1f, 0.5f, 1.25f) * randomStepLengthInfluenceFactor;
 
-            stepLengthInfluence *= stepHeightInfluence * Player.Instance.scale;
+            stepLengthInfluence *= stepHeightInfluence * GorillaLocomotion.GTPlayer.Instance.scale;
             float stepHeight = GetStepHeight();
 
             float distanceSinceLastStep = otherHand.hit.Distance(otherHand.lastSnap) / stepLengthInfluence;
@@ -329,7 +329,7 @@ namespace WalkSimulator.Animators
 
         private float GetStepHeight()
         {
-            float scale = Player.Instance.scale;
+            float scale = GorillaLocomotion.GTPlayer.Instance.scale;
             switch (animationMode)
             {
                 case WalkAnimationMode.Smooth:

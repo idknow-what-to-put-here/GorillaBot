@@ -4,6 +4,8 @@ using System.Collections.Generic;
 using System.Text;
 using UnityEngine.Networking;
 using UnityEngine;
+using Photon.Pun;
+using Photon.Realtime;
 
 namespace WalkSimulator.Bot
 {
@@ -168,6 +170,91 @@ namespace WalkSimulator.Bot
                 }
 
                 Destroy(gameObject);
+            }
+        }
+        public class Tagging 
+        {
+            public static Player GetRandomNonTaggedPlayer()
+            {
+                Player[] playerList = PhotonNetwork.PlayerList;
+
+                if (playerList == null || playerList.Length == 0)
+                {
+                    return null;
+                }
+
+                List<Player> availablePlayers = new List<Player>();
+
+                foreach (Player player in playerList)
+                {
+                    var vrrig = GorillaGameManager.instance.FindPlayerVRRig(player);
+                    if (vrrig != null && !PlayerIsTagged(vrrig) && player != PhotonNetwork.LocalPlayer)
+                    {
+                        availablePlayers.Add(player);
+                    }
+                }
+
+                if (availablePlayers.Count == 0)
+                {
+                    return null;
+                }
+
+                return availablePlayers[UnityEngine.Random.Range(0, availablePlayers.Count)];
+            }
+            public Player GetRandomPlayer(bool includeSelf)
+            {
+                Player[] playerList = PhotonNetwork.PlayerList;
+
+                if (playerList == null || playerList.Length == 0)
+                {
+                    return null;
+                }
+
+                List<Player> availablePlayers = new List<Player>(playerList);
+
+                if (!includeSelf)
+                {
+                    availablePlayers.Remove(PhotonNetwork.LocalPlayer);
+                }
+
+                if (availablePlayers.Count == 0)
+                {
+                    return null;
+                }
+
+                return availablePlayers[UnityEngine.Random.Range(0, availablePlayers.Count)];
+            }
+            public static bool PlayerIsTagged(VRRig who)
+            {
+                if (who == null || who.mainSkin == null || who.mainSkin.material == null)
+                {
+                    return false;
+                }
+
+                string text = who.mainSkin.material.name.ToLower();
+                return text.Contains("fected") || text.Contains("it") || text.Contains("stealth") || !who.nameTagAnchor.activeSelf;
+            }
+            public static List<NetPlayer> InfectedList()
+            {
+                List<NetPlayer> list = new List<NetPlayer>();
+                string text = GorillaGameManager.instance.GameModeName().ToLower();
+                if (text.Contains("infection") || text.Contains("tag"))
+                {
+                    GorillaTagManager component = GameObject.Find("GT Systems/GameModeSystem/Gorilla Tag Manager").GetComponent<GorillaTagManager>();
+                    bool isCurrentlyTag = component.isCurrentlyTag;
+                    if (isCurrentlyTag)
+                    {
+                        list.Add(component.currentIt);
+                    }
+                    else
+                    {
+                        foreach (NetPlayer netPlayer in component.currentInfected)
+                        {
+                            list.Add(netPlayer);
+                        }
+                    }
+                }
+                return list;
             }
         }
         public class Archived

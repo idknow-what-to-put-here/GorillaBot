@@ -34,7 +34,7 @@ namespace WalkSimulator.Rigging
         private Vector3 defaultOffset;
         private Transform head;
         private Transform body;
-        private Transform controller;
+        public Transform controller;
 
         public Vector3 DefaultPosition
         {
@@ -48,14 +48,14 @@ namespace WalkSimulator.Rigging
             head = Rig.Instance.head;
             body = Rig.Instance.body;
 
-            if (GorillaLocomotion.Player.Instance == null)
+            if (GorillaLocomotion.GTPlayer.Instance == null)
             {
-                Debug.LogError("GorillaLocomotion.Player.Instance is null in HandDriver.Init");
+                Debug.LogError("GorillaLocomotion.GTPlayer.Instance is null in HandDriver.Init");
                 enabled = false;
                 return;
             }
 
-            controller = isLeft ? GorillaLocomotion.Player.Instance.leftControllerTransform : GorillaLocomotion.Player.Instance.rightControllerTransform;
+            controller = isLeft ? GorillaLocomotion.GTPlayer.Instance.leftControllerTransform : GorillaLocomotion.GTPlayer.Instance.rightControllerTransform;
 
             if (GorillaTagger.Instance == null || GorillaTagger.Instance.offlineVRRig == null)
             {
