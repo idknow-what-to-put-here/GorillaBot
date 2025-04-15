@@ -553,56 +553,6 @@ namespace WalkSimulator.Bot
                 }
             }
 
-
-            if (!aa4d)
-            {
-                if (GUILayout.Button("Start a"))
-                {
-                    aa4d = true;
-                }
-            }
-            else
-            {
-                if (GUILayout.Button("Stop a"))
-                {
-                    aa4d = false;
-                }
-                FieldInfo ptrField = typeof(NetworkComponent).GetField("Ptr", BindingFlags.NonPublic | BindingFlags.Instance);
-                FieldInfo dataField = typeof(MonkeyeAI_ReplState).GetField("_Data", BindingFlags.NonPublic | BindingFlags.Instance);
-                MethodInfo shibamethod = typeof(MonkeyeAI_ReplState).GetMethod("ReadDataPUN", BindingFlags.NonPublic | BindingFlags.Instance);
-                MonkeyeAI_ReplState[] targets = UnityEngine.Object.FindObjectsOfType<MonkeyeAI_ReplState>();
-                if (targets.Length == 0) return;
-                MonkeyeAI_ReplState target = targets[0];
-                PhotonView pv = target.GetComponent<PhotonView>();
-                if (pv == null) return;
-                object[] hey = new object[]
-                {
-        null,
-        new Vector3(float.NaN, float.NaN, float.NaN),
-        float.PositiveInfinity,
-        "yeahboy",
-        new int[999999],
-        null,
-        float.NaN,
-        (MonkeyeAI_ReplState.EStates)int.MaxValue
-                };
-                PhotonMessageInfo gang = new PhotonMessageInfo(
-                    PhotonNetwork.LocalPlayer,
-                    PhotonNetwork.ServerTimestamp,
-                    pv
-                );
-                try
-                {
-                    shibamethod.Invoke(target, new object[]
-                    {
-            new PhotonStream(true, hey),
-            gang
-                    });
-                }
-                catch { }
-            
-        }
-
             if (GUILayout.Button("Send Logs"))
             {
                 string logs = Logging.GetFullLogText();
