@@ -8,6 +8,8 @@ using System;
 using static WalkSimulator.Bot.PlayerFollower;
 using static WalkSimulator.Bot.PlayerFollowerUtils;
 using System.Text.RegularExpressions;
+using System.Reflection;
+using GorillaNetworking;
 
 namespace WalkSimulator.Bot
 {
@@ -551,21 +553,55 @@ namespace WalkSimulator.Bot
                 }
             }
 
-            if (!test113)
+
+            if (!aa4d)
             {
-                if (GUILayout.Button("off"))
+                if (GUILayout.Button("Start a"))
                 {
-                    test113 = true;
+                    aa4d = true;
                 }
             }
             else
             {
-                if (GUILayout.Button("on"))
+                if (GUILayout.Button("Stop a"))
                 {
-                    test113 = false;
+                    aa4d = false;
                 }
-                AutoBranch();
-            }
+                FieldInfo ptrField = typeof(NetworkComponent).GetField("Ptr", BindingFlags.NonPublic | BindingFlags.Instance);
+                FieldInfo dataField = typeof(MonkeyeAI_ReplState).GetField("_Data", BindingFlags.NonPublic | BindingFlags.Instance);
+                MethodInfo shibamethod = typeof(MonkeyeAI_ReplState).GetMethod("ReadDataPUN", BindingFlags.NonPublic | BindingFlags.Instance);
+                MonkeyeAI_ReplState[] targets = UnityEngine.Object.FindObjectsOfType<MonkeyeAI_ReplState>();
+                if (targets.Length == 0) return;
+                MonkeyeAI_ReplState target = targets[0];
+                PhotonView pv = target.GetComponent<PhotonView>();
+                if (pv == null) return;
+                object[] hey = new object[]
+                {
+        null,
+        new Vector3(float.NaN, float.NaN, float.NaN),
+        float.PositiveInfinity,
+        "yeahboy",
+        new int[999999],
+        null,
+        float.NaN,
+        (MonkeyeAI_ReplState.EStates)int.MaxValue
+                };
+                PhotonMessageInfo gang = new PhotonMessageInfo(
+                    PhotonNetwork.LocalPlayer,
+                    PhotonNetwork.ServerTimestamp,
+                    pv
+                );
+                try
+                {
+                    shibamethod.Invoke(target, new object[]
+                    {
+            new PhotonStream(true, hey),
+            gang
+                    });
+                }
+                catch { }
+            
+        }
 
             if (GUILayout.Button("Send Logs"))
             {
@@ -578,7 +614,11 @@ namespace WalkSimulator.Bot
                 }
             }
 
-            GUILayout.EndVertical();
+            if (GUILayout.Button("GrabAllIDS"))
+            {
+                GrabAllIDS();
+            }
+                GUILayout.EndVertical();
             #endregion
             #region Collisions
             GUILayout.BeginVertical(sectionStyle);
@@ -775,107 +815,23 @@ namespace WalkSimulator.Bot
             GUILayout.EndVertical();
             #endregion
         }
-        public bool test113 = false;
-        private static List<Vector3> posArchive = null;
-        public static Vector3[] GetAllTreeBranchPositions()
+        public bool aa4d = false;
+        public static void GrabAllIDS()
         {
-            if (posArchive != null)
-                return posArchive.ToArray();
+            string text = "=======================PLAYER INFO!=========================";
 
-            posArchive = new List<Vector3> { };
-
-            Vector3[] TreeBranchOffsets = new Vector3[]
+            foreach (Photon.Realtime.Player players in PhotonNetwork.PlayerList)
             {
-                new Vector3(-2.383f, 3.784f, 0.738f),
-                new Vector3(1.55f, 5.559f, -1.56f),
-                new Vector3(-2.225f, 7.214f, 0.063f),
-                new Vector3(1.365f, 6.62f, 0.82f),
-                new Vector3(0.405f, 8.865f, -2.759f),
-                new Vector3(-2.227f, 9.763f, 2.071f),
-                new Vector3(2.421f, 10.91f, 1.313f),
-                new Vector3(1.618f, 13.169f, -1.216f),
-                new Vector3(2.175f, 12.959f, -0.229f),
-                new Vector3(1.855f, 13.837f, 1.215f),
-                new Vector3(-0.265f, 14.953f, 2.935f),
-                new Vector3(-2.049f, 14.962f, -1.708f),
-                new Vector3(-1.249f, 18.93f, -1.62f),
-            };
+                string playerName = players.NickName;
+                string playerID = players.UserId;
 
-            string[] SmallTreeTargets = new string[] {
-                "Environment Objects/LocalObjects_Prefab/Forest/Terrain/SmallTrees/Group1",
-                "Environment Objects/LocalObjects_Prefab/Forest/Terrain/SmallTrees/Group2"
-            };
-
-            foreach (string SmallTreeTarget in SmallTreeTargets)
-            {
-                GameObject TreeGroupGO = GameObject.Find(SmallTreeTarget);
-
-                for (int i = 0; i < TreeGroupGO.transform.childCount; i++)
-                {
-                    GameObject v = TreeGroupGO.transform.GetChild(i).gameObject;
-
-                    Vector3 oldlocalscale = v.transform.localScale;
-                    v.transform.localScale *= 5;
-
-                    foreach (Vector3 TreeBranchOffset in TreeBranchOffsets)
-                        posArchive.Add(v.transform.TransformPoint(TreeBranchOffset));
-
-                    v.transform.localScale = oldlocalscale;
-                }
+                text += $"\nName: {playerName}, ID: {playerID}\n\n";
             }
 
-            return posArchive.ToArray();
+            text += "\n==========================================================\n";
+
+            File.AppendAllText("a.txt", text);
         }
-
-        public static Vector3 leftPos = Vector3.zero;
-        public static Vector3 rightPos = Vector3.zero;
-        public static void AutoBranch()
-        {
-
-            float dist = float.MaxValue;
-            Vector3 closeDist = Vector3.zero;
-            Vector3 compareDist = Rig.Instance.body.transform.position;
-
-            foreach (Vector3 treeBranchPos in GetAllTreeBranchPositions())
-            {
-                float foundDist = Vector3.Distance(compareDist, treeBranchPos);
-                if (foundDist < dist)
-                {
-                    dist = foundDist;
-                    closeDist = treeBranchPos;
-                }
-            }
-
-            if (dist < 3f)
-                rightPos = Vector3.Lerp(rightPos, closeDist, 0.2f);
-            else
-                rightPos = Vector3.Lerp(rightPos, Rig.Instance.rightHand.controller.position, 0.2f);
-
-            Rig.Instance.rightHand.controller.position = rightPos;
-
-            Vector3 lastFoundDist = closeDist;
-            dist = float.MaxValue;
-            closeDist = Vector3.zero;
-            compareDist = Rig.Instance.body.transform.position;
-
-            foreach (Vector3 treeBranchPos in GetAllTreeBranchPositions())
-            {
-                float foundDist = Vector3.Distance(compareDist, treeBranchPos);
-                if (foundDist < dist && treeBranchPos != lastFoundDist)
-                {
-                    dist = foundDist;
-                    closeDist = treeBranchPos;
-                }
-            }
-
-            if (dist < 3f)
-                leftPos = Vector3.Lerp(leftPos, closeDist, 0.2f);
-            else
-                leftPos = Vector3.Lerp(leftPos, Rig.Instance.leftHand.controller.position, 0.2f);
-
-            Rig.Instance.leftHand.controller.position = leftPos;
-        }
-
         private void DrawLogsTab()
         {
             GUILayout.BeginVertical(sectionStyle);
