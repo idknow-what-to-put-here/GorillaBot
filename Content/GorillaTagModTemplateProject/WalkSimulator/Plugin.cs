@@ -65,6 +65,7 @@ namespace WalkSimulator
         {
             Enabled = true;
         }
+
         private void OnEnable()
         {
             HarmonyPatches.ApplyHarmonyPatches();
@@ -77,6 +78,13 @@ namespace WalkSimulator
         {
             Plugin.IsSteam = ((string)Traverse.Create(PlayFabAuthenticator.instance).Field("platform").GetValue()).ToLower().Contains("steam");
             Enabled = true;
+        }
+        private void Update()
+        {
+            foreach (KeyBinding binding in keyBindings)
+            {
+                binding.CheckInput();
+            }
         }
         private void FixedUpdate()
         {
@@ -104,6 +112,36 @@ namespace WalkSimulator
                 GUI.Label(new Rect(num3 - num, num4, num, num2), text2 + ": " + sliders[text2].ToString());
             }
         }
+
+        private class KeyBinding
+        {
+            private KeyCode key;
+            private Action action;
+            private bool wasPressed = false;
+
+            public KeyBinding(KeyCode key, Action action)
+            {
+                this.key = key;
+                this.action = action;
+            }
+
+            public void CheckInput()
+            {
+                if (Input.GetKey(key))
+                {
+                    if (!wasPressed)
+                    {
+                        wasPressed = true;
+                        action?.Invoke();
+                    }
+                }
+                else
+                {
+                    wasPressed = false;
+                }
+            }
+        }
+
         public static Plugin Instance;
         private static bool _enabled = true;
         public AnimatorBase walkAnimator;
@@ -115,5 +153,6 @@ namespace WalkSimulator
         private bool setGamemode;
         public Dictionary<string, float> sliders = new Dictionary<string, float>();
         public Dictionary<string, string> labels = new Dictionary<string, string>();
+        private List<KeyBinding> keyBindings = new List<KeyBinding>();
     }
 }

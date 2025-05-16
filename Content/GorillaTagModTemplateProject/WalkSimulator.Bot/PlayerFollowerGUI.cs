@@ -13,11 +13,6 @@ using GorillaNetworking;
 
 namespace WalkSimulator.Bot
 {
-    public enum ActionSource
-    {
-        Server,
-        Client,
-    }
     public class PlayerFollowerGUI : MonoBehaviour
     {
         private readonly PlayerFollower follower;
@@ -288,7 +283,6 @@ namespace WalkSimulator.Bot
                 Transform localBody = GetLocalBody();
                 if (localBody == null) return;
                 AddPointAndUpdate(localBody.position);
-                follower.dashboardServer.AddWaypoint(localBody.position, ActionSource.Client);
             }
 
             if (GUILayout.Button("Add Forward Waypoint"))
@@ -307,7 +301,6 @@ namespace WalkSimulator.Bot
                     newWaypoint = follower.lineRenderers.pathPositions[count - 1] + localBody.forward * 2f;
                 }
                 AddPointAndUpdate(newWaypoint);
-                follower.dashboardServer.AddWaypoint(newWaypoint, ActionSource.Client);
             }
 
             if (GUILayout.Button(follower.waitingForJumpStart ? "Set Jump Start" : "Set Jump End"))
@@ -350,41 +343,25 @@ namespace WalkSimulator.Bot
                     positions.RemoveAt(positions.Count - 1);
                     follower.lineRenderers.UpdatePathLineRenderer();
                 }
-                follower.dashboardServer.RemoveLastWaypoint(ActionSource.Client);
             }
 
             if (GUILayout.Button("Start Path Following"))
             {
                 if (follower.lineRenderers.pathPositions.Count > 0)
                 {
-                    follower.followPathEnabled = true;
+                    follower.StartPathing();
                 }
-                follower.dashboardServer.StartPathFollowing(ActionSource.Client);
             }
 
             if (GUILayout.Button("Stop Path Following"))
             {
                 follower.StopPathing();
-                follower.dashboardServer.StopPathFollowing(ActionSource.Client);
-                follower.dashboardServer.ClearWaypoints(ActionSource.Client);
             }
 
             GUILayout.Space(10);
             if (GUILayout.Button("Open Preset Manager"))
             {
                 showPresetManager = true;
-            }
-            if (GUILayout.Button(follower.isSelectingPathPoints ? "Finish Path to City" : "Go To City using nevmesh"))
-            {
-                Vector3 cityDestination = new Vector3(-60.81395f, 16.54018f, -115.02606f);
-                follower.PathfindTo(cityDestination);
-            }
-
-            if (GUILayout.Button("AddPathPoint"))
-            {
-                Transform localBody = GetLocalBody();
-                if (localBody == null) return;
-              //  follower.AddPathPoint(localBody.position);
             }
 
             GUILayout.EndVertical();
@@ -568,7 +545,7 @@ namespace WalkSimulator.Bot
             {
                 GrabAllIDS();
             }
-                GUILayout.EndVertical();
+            GUILayout.EndVertical();
             #endregion
             #region Collisions
             GUILayout.BeginVertical(sectionStyle);
@@ -679,9 +656,14 @@ namespace WalkSimulator.Bot
                 follower.fleeEnabled = newFleeEnabled;
                 if (newFleeEnabled)
                 {
+                    follower.StartFleeing();
                     follower.followPlayerEnabled = false;
                     follower.followPathEnabled = false;
                     follower.isTagging = false;
+                }
+                else
+                {
+                    follower.StopFleeing();
                 }
             }
             GUILayout.EndVertical();
@@ -765,7 +747,6 @@ namespace WalkSimulator.Bot
             GUILayout.EndVertical();
             #endregion
         }
-        public bool aa4d = false;
         public static void GrabAllIDS()
         {
             string text = "=======================PLAYER INFO!=========================";

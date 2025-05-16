@@ -18,19 +18,378 @@ using System.Threading.Tasks;
 
 namespace WalkSimulator.Bot
 {
+    #region StateMachines
+    public enum MovementState
+    {
+        Idle,
+        Moving
+    }
+    public enum PathingState
+    {
+        Idle,
+        FollowingPath,
+        Stopped
+    }
+    public enum FollowingState
+    {
+        Idle,
+        FollowingPlayer,
+        Stopped
+    }
+    public enum TaggingState
+    {
+        Idle,
+        ChasingPlayer,
+        Stopped
+    }
+    public enum FleeState
+    {
+        Idle,
+        Fleeing,
+        Stopped
+    }
+    public class MovementStateMachine
+    {
+        public MovementState CurrentState { get; private set; }
+        private PlayerFollower playerFollower;
+
+        public MovementStateMachine(PlayerFollower follower)
+        {
+            playerFollower = follower;
+            CurrentState = MovementState.Idle;
+        }
+        public void StartMoving()
+        {
+            if (CurrentState == MovementState.Idle)
+            {
+                CurrentState = MovementState.Moving;
+                playerFollower.walkAnimator.enabled = true;
+            }
+        }
+        public void StopMoving()
+        {
+            if (CurrentState == MovementState.Moving)
+            {
+                CurrentState = MovementState.Idle;
+                playerFollower.walkAnimator.enabled = false;
+                InputHandler.inputDirectionNoY = Vector3.zero;
+            }
+        }
+        public void UpdateMovement(Vector3 localDirection)
+        {
+            if (CurrentState == MovementState.Moving)
+            {
+                InputHandler.inputDirectionNoY = new Vector3(localDirection.x, 0f, localDirection.z);
+            }
+        }
+    }
+    public class PathingStateMachine
+    {
+        public PathingState CurrentState { get; private set; }
+        private PlayerFollower playerFollower;
+
+        public PathingStateMachine(PlayerFollower follower)
+        {
+            playerFollower = follower;
+            CurrentState = PathingState.Idle;
+        }
+        public void StartPathing()
+        {
+            if (CurrentState == PathingState.Idle || CurrentState == PathingState.Stopped)
+            {
+                CurrentState = PathingState.FollowingPath;
+                playerFollower.followPathEnabled = true;
+            }
+        }
+        public void StopPathing()
+        {
+            if (CurrentState == PathingState.FollowingPath)
+            {
+                CurrentState = PathingState.Idle;
+                playerFollower.followPathEnabled = false;
+                InputHandler.inputDirectionNoY = Vector3.zero;
+                Transform localBody = Rig.Instance.body;
+                if (localBody != null)
+                {
+                    playerFollower.lineRenderers.ClearPath(localBody);
+                }
+                playerFollower.lineRenderers.pathPositions.Clear();
+            }
+        }
+        public void MoveAlongPath()
+        {
+            if (CurrentState != PathingState.FollowingPath) return;
+
+            Transform localBody = Rig.Instance.body;
+            if (localBody == null) return;
+
+            if (playerFollower.lineRenderers.pathPositions.Count == 0)
+            {
+                StopPathing();
+                return;
+            }
+
+            Vector3 targetPoint = playerFollower.lineRenderers.pathPositions[0];
+            playerFollower.lineRenderers.UpdateLineRenderersForPath(localBody, targetPoint);
+            Vector3 directionToTarget = targetPoint - localBody.position;
+            directionToTarget.y = 0f;
+            float distanceToTarget = directionToTarget.magnitude;
+
+            if (playerFollower.ShouldJump(localBody.position, targetPoint))
+            {
+                if (!playerFollower.isPreparingToJump)
+                {
+                    playerFollower.isPreparingToJump = true;
+                    playerFollower.jumpTarget = targetPoint;
+                }
+                if (distanceToTarget <= PlayerFollower.JUMP_PREPARATION_DISTANCE)
+                {
+                    playerFollower.TriggerJump();
+                }
+            }
+
+            if (distanceToTarget < PlayerFollower.TARGET_PROXIMITY_THRESHOLD)
+            {
+                playerFollower.lineRenderers.pathPositions.RemoveAt(0);
+                if (playerFollower.lineRenderers.pathPositions.Count == 0)
+                {
+                    playerFollower.movementStateMachine.StopMoving();
+                    StopPathing();
+                    return;
+                }
+                playerFollower.isPreparingToJump = false;
+                targetPoint = playerFollower.lineRenderers.pathPositions[0];
+                directionToTarget = targetPoint - localBody.position;
+                directionToTarget.y = 0f;
+                distanceToTarget = directionToTarget.magnitude;
+            }
+
+            Vector3 finalDirection = playerFollower.avoidObjects ? 
+                playerFollower.AvoidObstacles(localBody.position, directionToTarget.normalized) : 
+                directionToTarget.normalized;
+
+            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * finalDirection;
+            playerFollower.movementStateMachine.UpdateMovement(localDirection);
+            playerFollower.TurnTowardsTargetPosition(localBody, targetPoint);
+        }
+    }
+    public class FollowingStateMachine
+    {
+        public FollowingState CurrentState { get; private set; }
+        private PlayerFollower playerFollower;
+
+        public FollowingStateMachine(PlayerFollower follower)
+        {
+            playerFollower = follower;
+            CurrentState = FollowingState.Idle;
+        }
+        public void StartFollowing(Player player)
+        {
+            if (CurrentState == FollowingState.Idle || CurrentState == FollowingState.Stopped)
+            {
+                CurrentState = FollowingState.FollowingPlayer;
+                playerFollower.followPlayerEnabled = true;
+                playerFollower.currentPlayer = player;
+                playerFollower.followPathEnabled = false;
+            }
+        }
+        public void StopFollowing()
+        {
+            if (CurrentState == FollowingState.FollowingPlayer)
+            {
+                CurrentState = FollowingState.Idle;
+                playerFollower.followPlayerEnabled = false;
+                playerFollower.currentPlayer = null;
+                playerFollower.lineRenderers.DisableLineRenderers();
+            }
+        }
+        public void MoveToTargetPlayer()
+        {
+            if (CurrentState != FollowingState.FollowingPlayer || playerFollower.currentPlayer == null) return;
+
+            var (targetTransform, localBody) = playerFollower.GetPlayerTransforms(playerFollower.currentPlayer);
+            if (targetTransform == null || localBody == null) return;
+
+            playerFollower.lineRenderers.UpdateLineRenderers(localBody, targetTransform);
+            Vector3 directionToTarget = targetTransform.position - localBody.position;
+            directionToTarget.y = 0f;
+            float distanceToTarget = directionToTarget.magnitude;
+
+            Vector3 finalDirection = playerFollower.avoidObjects ? 
+                playerFollower.AvoidObstacles(localBody.position, directionToTarget.normalized) : 
+                directionToTarget.normalized;
+
+            if (distanceToTarget < PlayerFollower.TARGET_PROXIMITY_THRESHOLD)
+            {
+                playerFollower.movementStateMachine.StopMoving();
+                return;
+            }
+
+            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * finalDirection;
+            playerFollower.movementStateMachine.UpdateMovement(localDirection);
+            playerFollower.TurnTowardsTarget(targetTransform, localBody);
+        }
+    }
+    public class TaggingStateMachine
+    {
+        public TaggingState CurrentState { get; private set; }
+        private PlayerFollower playerFollower;
+
+        public TaggingStateMachine(PlayerFollower follower)
+        {
+            playerFollower = follower;
+            CurrentState = TaggingState.Idle;
+        }
+        public void StartTagging()
+        {
+            if (CurrentState == TaggingState.Idle)
+            {
+                CurrentState = TaggingState.ChasingPlayer;
+                playerFollower.isTagging = true;
+                playerFollower.taggedPlayer = PlayerFollowerUtils.Tagging.GetRandomNonTaggedPlayer();
+                if (playerFollower.taggedPlayer != null)
+                {
+                    playerFollower.tagTimer = playerFollower.tagDuration;
+                }
+            }
+        }
+        public void StopTagging()
+        {
+            if (CurrentState == TaggingState.ChasingPlayer)
+            {
+                CurrentState = TaggingState.Idle;
+                playerFollower.isTagging = false;
+                playerFollower.taggedPlayer = null;
+                playerFollower.movementStateMachine.StopMoving();
+            }
+        }
+        public void MoveToTaggedPlayer()
+        {
+            if (CurrentState != TaggingState.ChasingPlayer || playerFollower.taggedPlayer == null)
+            {
+                StopTagging();
+                return;
+            }
+
+            var (targetTransform, localBody) = playerFollower.GetPlayerTransforms(playerFollower.taggedPlayer);
+            if (targetTransform == null || localBody == null) return;
+
+            playerFollower.lineRenderers.UpdateLineRenderers(localBody, targetTransform);
+            Vector3 directionToTarget = targetTransform.position - localBody.position;
+            directionToTarget.y = 0f;
+            float distanceToTarget = directionToTarget.magnitude;
+
+            Vector3 finalDirection = playerFollower.avoidObjects ? 
+                playerFollower.AvoidObstacles(localBody.position, directionToTarget.normalized) : 
+                directionToTarget.normalized;
+
+            if (distanceToTarget < PlayerFollower.TARGET_PROXIMITY_THRESHOLD)
+            {
+                playerFollower.movementStateMachine.StopMoving();
+                return;
+            }
+
+            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * finalDirection;
+            playerFollower.movementStateMachine.UpdateMovement(localDirection);
+            playerFollower.TurnTowardsTarget(targetTransform, localBody);
+        }
+    }
+    public class FleeStateMachine
+    {
+        public FleeState CurrentState { get; private set; }
+        private PlayerFollower playerFollower;
+
+        public FleeStateMachine(PlayerFollower follower)
+        {
+            playerFollower = follower;
+            CurrentState = FleeState.Idle;
+        }
+        public void StartFleeing()
+        {
+            if (CurrentState == FleeState.Idle)
+            {
+                CurrentState = FleeState.Fleeing;
+                playerFollower.fleeEnabled = true;
+            }
+        }
+        public void StopFleeing()
+        {
+            if (CurrentState == FleeState.Fleeing)
+            {
+                CurrentState = FleeState.Idle;
+                playerFollower.fleeEnabled = false;
+                playerFollower.movementStateMachine.StopMoving();
+            }
+        }
+        public void FleeFromTaggers()
+        {
+            if (CurrentState != FleeState.Fleeing) return;
+
+            Transform localBody = Rig.Instance.body;
+            if (localBody == null) return;
+
+            List<Vector3> taggedPlayerPositions = new List<Vector3>();
+            foreach (Player player in PhotonNetwork.PlayerList)
+            {
+                var vrrig = GorillaGameManager.instance.FindPlayerVRRig(player);
+                if (vrrig != null && PlayerFollowerUtils.Tagging.PlayerIsTagged(vrrig))
+                {
+                    taggedPlayerPositions.Add(vrrig.transform.position);
+                }
+            }
+
+            if (taggedPlayerPositions.Count == 0)
+            {
+                playerFollower.movementStateMachine.StopMoving();
+                return;
+            }
+
+            Vector3 fleeDirection = Vector3.zero;
+            foreach (Vector3 pos in taggedPlayerPositions)
+            {
+                Vector3 toTagger = localBody.position - pos;
+                float distance = toTagger.magnitude;
+                if (distance < playerFollower.FLEE_RADIUS)
+                {
+                    fleeDirection += toTagger.normalized * (1 / Mathf.Max(distance, 0.1f));
+                }
+            }
+
+            if (fleeDirection == Vector3.zero)
+            {
+                playerFollower.movementStateMachine.StopMoving();
+                return;
+            }
+
+            fleeDirection.Normalize();
+            fleeDirection = playerFollower.AvoidObstaclesTaggers(localBody.position, fleeDirection);
+
+            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * fleeDirection;
+            playerFollower.lineRenderers.UpdateLineRenderersForPath(localBody, fleeDirection);
+            playerFollower.movementStateMachine.UpdateMovement(localDirection);
+            playerFollower.TurnTowardsTargetPosition(localBody, localBody.position + fleeDirection);
+        }
+    }
+    #endregion
     public class PlayerFollower : MonoBehaviour
     {
         private PlayerFollowerGUI gui;
-        public DashboardServer dashboardServer;
         public MovementRecorder movementRecorder;
         public ConfigEntry<string> DiscordWebhookUrl;
 
-        private const float TARGET_PROXIMITY_THRESHOLD = 0.5f;
+        // State Machines
+        public MovementStateMachine movementStateMachine { get; private set; }
+        private PathingStateMachine pathingStateMachine;
+        private FollowingStateMachine followingStateMachine;
+        private TaggingStateMachine taggingStateMachine;
+        private FleeStateMachine fleeStateMachine;
+
+        public const float TARGET_PROXIMITY_THRESHOLD = 0.5f;
         private const float MAX_TURN_SPEED = 15f;
         private const float TURN_SPEED_DIVISOR = 10f;
         private const float ROTATION_THRESHOLD = 1f;
         private const float JUMP_HEIGHT_THRESHOLD = 0.6f;
-        private const float JUMP_PREPARATION_DISTANCE = 1.2f;
+        public const float JUMP_PREPARATION_DISTANCE = 1.2f;
         //private const float WAYPOINT_UPDATE_INTERVAL = 5.0f;
 
         public bool followPlayerEnabled;
@@ -51,14 +410,14 @@ namespace WalkSimulator.Bot
         public bool showDirection = true;
 
         // Jump
-        private bool isPreparingToJump = false;
+        public bool isPreparingToJump = false;
         public Vector3 jumpTarget;
         public bool waitingForJumpStart = true;
         public Vector3 jumpWaypointStart;
 
         // Tagging
         public bool isTagging = false;
-        private float tagDuration = 60f;
+        public float tagDuration = 60f;
         public float tagTimer = 0f;
         public Player taggedPlayer;
 
@@ -114,6 +473,13 @@ namespace WalkSimulator.Bot
             gui = new PlayerFollowerGUI(this);
             movementRecorder = new MovementRecorder(this);
 
+            // Initialize State Machines
+            movementStateMachine = new MovementStateMachine(this);
+            pathingStateMachine = new PathingStateMachine(this);
+            followingStateMachine = new FollowingStateMachine(this);
+            taggingStateMachine = new TaggingStateMachine(this);
+            fleeStateMachine = new FleeStateMachine(this);
+
             // Initialize Components
             logger = BepInEx.Logging.Logger.CreateLogSource("WalkSimulator");
             logger.LogEvent += (logLevel, message) =>
@@ -151,10 +517,6 @@ namespace WalkSimulator.Bot
 
             InitializeHardcodedPresets();
 
-
-            dashboardServer = new DashboardServer(this);
-            dashboardServer.Initialize();
-
             Invoke("InitializeObjects", 1.0f);
 
         }
@@ -165,6 +527,8 @@ namespace WalkSimulator.Bot
 
             foreach (GameObject root in rootObjects)
             {
+                if (blacklistPaths.Contains(root.name)) continue;
+
                 Stack<Transform> stack = new Stack<Transform>();
                 stack.Push(root.transform);
 
@@ -173,11 +537,10 @@ namespace WalkSimulator.Bot
                     Transform current = stack.Pop();
                     if (current.gameObject.activeInHierarchy)
                     {
-                        if (current == transform || current == Rig.Instance.body) continue;
+                        if (current == transform || (Rig.Instance != null && current == Rig.Instance.body)) continue;
 
                         bool isObstacle = obstaclePaths.Any(path => current.transform.IsChildOf(GameObject.Find(path)?.transform));
-
-                        if (isObstacle)
+                        if (isObstacle && current.GetComponent<Collider>() != null)
                         {
                             activeObjects.Add(current.gameObject);
                         }
@@ -193,9 +556,13 @@ namespace WalkSimulator.Bot
         private void OnGUI()
         {
             gui.OnGUI();
+            //Test.Instance.OnGUI();
+
         }
         private void FixedUpdate()
         {
+            //Test.Instance.Update();
+
             if (Rig.Instance != null && Rig.Instance.active)
             {
                 CheckCollisions();
@@ -214,16 +581,15 @@ namespace WalkSimulator.Bot
             */
             if (fleeEnabled)
             {
-                FleeFromTaggers();
+                fleeStateMachine.FleeFromTaggers();
             }
-            if (followPlayerEnabled && currentPlayer != null)
+            else if (followPlayerEnabled && currentPlayer != null)
             {
-                //MoveToTargetPlayerWithWaypoints();
-                MoveToTargetPlayer();
+                followingStateMachine.MoveToTargetPlayer();
             }
             else if (followPathEnabled && lineRenderers.pathPositions.Count > 0)
             {
-                MoveAlongPath();
+                pathingStateMachine.MoveAlongPath();
             }
             else if (lineRenderers.pathPositions.Count > 0)
             {
@@ -240,17 +606,16 @@ namespace WalkSimulator.Bot
             {
                 if (taggedPlayer != null)
                 {
-                    //MoveToTaggedPlayerWithWaypoints();
-                    MoveToTaggedPlayer();
+                    taggingStateMachine.MoveToTaggedPlayer();
                     tagTimer -= Time.fixedDeltaTime;
                     if (tagTimer <= 0)
                     {
-                        StopTagging();
+                        taggingStateMachine.StopTagging();
                     }
                 }
                 else
                 {
-                    StopTagging();
+                    taggingStateMachine.StopTagging();
                 }
             }
 
@@ -267,10 +632,6 @@ namespace WalkSimulator.Bot
             {
                 if (lineRenderers.pathLine.GameObject != null) Destroy(lineRenderers.pathLine.GameObject);
                 if (lineRenderers.directionLine.GameObject != null) Destroy(lineRenderers.directionLine.GameObject);
-            }
-            if (dashboardServer != null)
-            {
-                dashboardServer.Shutdown();
             }
             /*
             if (!string.IsNullOrEmpty(DiscordWebhookUrl.Value))
@@ -299,16 +660,28 @@ namespace WalkSimulator.Bot
             }
         }
         #region Movement
+        #region Flee
+        public void StartFleeing()
+        {
+            fleeStateMachine.StartFleeing();
+            movementStateMachine.StartMoving();
+            logger.LogInfo("Started fleeing from taggers.");
+        }
+        public void StopFleeing()
+        {
+            fleeStateMachine.StopFleeing();
+            movementStateMachine.StopMoving();
+            logger.LogInfo("Stopped fleeing.");
+        }
+        #endregion
         #region Tagging
         public void StartTagging()
         {
-            taggedPlayer = PlayerFollowerUtils.Tagging.GetRandomNonTaggedPlayer();
-
+            taggingStateMachine.StartTagging();
             if (taggedPlayer != null)
             {
-                isTagging = true;
-                tagTimer = tagDuration;
                 logger.LogInfo($"Starting tag on player: {taggedPlayer.NickName}");
+                movementStateMachine.StartMoving();
             }
             else
             {
@@ -317,107 +690,55 @@ namespace WalkSimulator.Bot
         }
         public void StopTagging()
         {
-            isTagging = false;
-            taggedPlayer = null;
-            StopMovement();
+            taggingStateMachine.StopTagging();
+            movementStateMachine.StopMoving();
             logger.LogInfo("Tagging stopped.");
-        }
-        private void MoveToTaggedPlayer()
-        {
-            if (taggedPlayer == null)
-            {
-                StopTagging();
-                return;
-            }
-            var (targetTransform, localBody) = GetPlayerTransforms(taggedPlayer);
-            if (targetTransform == null || localBody == null) { return; }
-            lineRenderers.UpdateLineRenderers(localBody, targetTransform);
-            UpdateMovement(localBody, targetTransform);
         }
         #endregion
         #region Following
         public void ToggleFollowing(Player player)
         {
-            followPathEnabled = false;
             if (currentPlayer == player && followPlayerEnabled)
             {
-                StopFollowing();
+                followingStateMachine.StopFollowing();
+                movementStateMachine.StopMoving();
             }
             else
             {
-                followPlayerEnabled = true;
-                currentPlayer = player;
+                followingStateMachine.StartFollowing(player);
+                movementStateMachine.StartMoving();
                 logger.LogInfo($"Starting Following on player: {player.NickName}");
-                StopPathing();
+                pathingStateMachine.StopPathing();
             }
             lineRenderers.pathLine.Renderer.enabled = followPlayerEnabled;
             lineRenderers.directionLine.Renderer.enabled = followPlayerEnabled;
         }
-        private void MoveToTargetPlayer()
-        {
-            var (targetTransform, localBody) = GetPlayerTransforms(currentPlayer);
-            if (targetTransform == null || localBody == null) return;
-            lineRenderers.UpdateLineRenderers(localBody, targetTransform);
-            UpdateMovement(localBody, targetTransform);
-        }
         public void StopFollowing()
         {
-            followPlayerEnabled = false;
-            currentPlayer = null;
-            lineRenderers.DisableLineRenderers();
+            followingStateMachine.StopFollowing();
+            movementStateMachine.StopMoving();
             logger.LogInfo("Following stopped.");
         }
         #endregion
         #region Pathing
-        private void MoveAlongPath()
-        {
-            Transform localBody = Rig.Instance.body;
-            if (localBody == null) return;
-            Vector3 targetPoint = lineRenderers.pathPositions[0];
-            lineRenderers.UpdateLineRenderersForPath(localBody, targetPoint);
-            Vector3 directionToTarget = targetPoint - localBody.position;
-            directionToTarget.y = 0f;
-            float distanceToTarget = directionToTarget.magnitude;
-            if (ShouldJump(localBody.position, targetPoint))
-            {
-                if (!isPreparingToJump)
-                {
-                    isPreparingToJump = true;
-                    jumpTarget = targetPoint;
-                }
-                if (distanceToTarget <= JUMP_PREPARATION_DISTANCE)
-                {
-                    TriggerJump();
-                }
-            }
-            if (distanceToTarget < TARGET_PROXIMITY_THRESHOLD)
-            {
-                lineRenderers.pathPositions.RemoveAt(0);
-                if (lineRenderers.pathPositions.Count == 0)
-                {
-                    StopMovement();
-                    followPathEnabled = false;
-                    return;
-                }
-                isPreparingToJump = false;
-                targetPoint = lineRenderers.pathPositions[0];
-                directionToTarget = targetPoint - localBody.position;
-                directionToTarget.y = 0f;
-                distanceToTarget = directionToTarget.magnitude;
-            }
-            Vector3 finalDirection = avoidObjects ? AvoidObstacles(localBody.position, directionToTarget.normalized) : directionToTarget.normalized;
-            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * finalDirection;
-            StartMovement(localDirection);
-            TurnTowardsTargetPosition(localBody, targetPoint);
-        }
         public void StopPathing()
         {
-            followPathEnabled = false;
-            InputHandler.inputDirectionNoY = Vector3.zero;
-            Transform localBody = Rig.Instance.body;
-            lineRenderers.ClearPath(localBody);
+            pathingStateMachine.StopPathing();
+            movementStateMachine.StopMoving();
             logger.LogInfo("Pathing stopped.");
-            Task.Run(async () => await dashboardServer.UpdateServerState());
+        }
+        public void StartPathing()
+        {
+            if (lineRenderers.pathPositions.Count > 0)
+            {
+                pathingStateMachine.StartPathing();
+                movementStateMachine.StartMoving();
+                logger.LogInfo("Starting path following.");
+            }
+            else
+            {
+                logger.LogWarning("No path points to follow.");
+            }
         }
         #endregion
         #region Hand
@@ -490,52 +811,6 @@ namespace WalkSimulator.Bot
             if ((selectedHandButton & PlayerFollowerGUI.HandButton.Secondary) != 0) { hand.secondary = state; }
         }
         #endregion
-        private void FleeFromTaggers()
-        {
-            Transform localBody = Rig.Instance.body;
-            if (localBody == null) return;
-
-            List<Vector3> taggedPlayerPositions = new List<Vector3>();
-            foreach (Player player in PhotonNetwork.PlayerList)
-            {
-                var vrrig = GorillaGameManager.instance.FindPlayerVRRig(player);
-                if (vrrig != null && PlayerFollowerUtils.Tagging.PlayerIsTagged(vrrig))
-                {
-                    taggedPlayerPositions.Add(vrrig.transform.position);
-                }
-            }
-
-            if (taggedPlayerPositions.Count == 0)
-            {
-                StopMovement();
-                return;
-            }
-
-            Vector3 fleeDirection = Vector3.zero;
-            foreach (Vector3 pos in taggedPlayerPositions)
-            {
-                Vector3 toTagger = localBody.position - pos;
-                float distance = toTagger.magnitude;
-                if (distance < FLEE_RADIUS)
-                {
-                    fleeDirection += toTagger.normalized * (1 / Mathf.Max(distance, 0.1f));
-                }
-            }
-
-            if (fleeDirection == Vector3.zero)
-            {
-                StopMovement();
-                return;
-            }
-
-            fleeDirection.Normalize();
-            fleeDirection = AvoidObstaclesTaggers(localBody.position, fleeDirection);
-
-            Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * fleeDirection;
-            lineRenderers.UpdateLineRenderersForPath(localBody, fleeDirection);
-            StartMovement(localDirection);
-            TurnTowardsTargetPosition(localBody, localBody.position + fleeDirection);
-        }
         public void UpdateMovement(Transform localBody, Transform targetTransform)
         {
             Vector3 directionToTarget = targetTransform.position - localBody.position;
@@ -550,32 +825,29 @@ namespace WalkSimulator.Bot
                 return;
             }
 
-            //lineRenderers.UpdateLineRenderersForPath(localBody, localBody.position + finalDirection * 5f);
-
             Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * finalDirection;
-            //Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * directionToTarget.normalized;
             StartMovement(localDirection);
             TurnTowardsTarget(targetTransform, localBody);
         }
-        private void StopMovement()
+        public void StopMovement()
         {
-            walkAnimator.enabled = false;
+            movementStateMachine.StopMoving();
             InputHandler.inputDirectionNoY = Vector3.zero;
         }
         private void StartMovement(Vector3 localDirection)
         {
-            walkAnimator.enabled = true;
+            movementStateMachine.StartMoving();
             InputHandler.inputDirectionNoY = new Vector3(localDirection.x, 0f, localDirection.z);
         }
         #endregion
         #region MovementUtils
         #region Jump
-        private bool ShouldJump(Vector3 currentPosition, Vector3 targetPosition)
+        public bool ShouldJump(Vector3 currentPosition, Vector3 targetPosition)
         {
             float heightDifference = targetPosition.y - currentPosition.y;
             return heightDifference > JUMP_HEIGHT_THRESHOLD;
         }
-        private void TriggerJump()
+        public void TriggerJump()
         {
             if (walkAnimator != null)
             {
@@ -681,7 +953,7 @@ namespace WalkSimulator.Bot
                 GorillaLocomotion.GTPlayer.Instance.Turn(turnAmount);
             }
         }
-        private void TurnTowardsTargetPosition(Transform localBody, Vector3 targetPoint)
+        public void TurnTowardsTargetPosition(Transform localBody, Vector3 targetPoint)
         {
             Vector3 targetDirection = targetPoint - localBody.position;
             targetDirection.y = 0f;
@@ -698,7 +970,7 @@ namespace WalkSimulator.Bot
                 GorillaLocomotion.GTPlayer.Instance.Turn(turnAmount);
             }
         }
-        private Vector3 AvoidObstaclesTaggers(Vector3 currentPosition, Vector3 desiredDirection)
+        public Vector3 AvoidObstaclesTaggers(Vector3 currentPosition, Vector3 desiredDirection)
         {
             Collider[] obstacles = Physics.OverlapSphere(currentPosition, avoidanceRadius, obstacleLayers);
             Vector3 avoidance = Vector3.zero;
@@ -722,7 +994,7 @@ namespace WalkSimulator.Bot
 
             return desiredDirection;
         }
-        private Vector3 AvoidObstacles(Vector3 currentPosition, Vector3 desiredDirection)
+        public Vector3 AvoidObstacles(Vector3 currentPosition, Vector3 desiredDirection)
         {
             Vector3 headPosition = Rig.Instance.head.position;
             float forwardRayDistance = 4f;
@@ -785,123 +1057,6 @@ namespace WalkSimulator.Bot
             return desiredDirection;
         }
         #region Collisions
-        public void ScanActiveObjects2()
-        {
-            activeObjects.Clear();
-            pathTransformCache.Clear();
-            GameObject[] rootObjects = SceneManager.GetActiveScene().GetRootGameObjects();
-
-            foreach (string path in blacklistPaths)
-            {
-                Transform pathTransform = GameObject.Find(path)?.transform;
-                if (pathTransform != null)
-                {
-                    pathTransformCache[path] = pathTransform;
-                }
-            }
-
-            foreach (string path in obstaclePaths)
-            {
-                Transform pathTransform = GameObject.Find(path)?.transform;
-                if (pathTransform != null)
-                {
-                    pathTransformCache[path] = pathTransform;
-                }
-            }
-
-            foreach (GameObject root in rootObjects)
-            {
-                if (blacklistPaths.Contains(root.name))
-                {
-                    Debug.Log($"Skipping blacklisted root object: {root.name}");
-                    continue;
-                }
-
-                Stack<Transform> stack = new Stack<Transform>();
-                stack.Push(root.transform);
-
-                while (stack.Count > 0)
-                {
-                    Transform current = stack.Pop();
-                    if (current.gameObject.activeInHierarchy)
-                    {
-                        if (current == transform || (Rig.Instance != null && current == Rig.Instance.body)) { continue; }
-
-                        string objName = current.gameObject.name.ToLower();
-                        bool isBlacklisted = blacklistTerms.Any(term => objName.Contains(term.ToLower()));
-                        if (isBlacklisted) continue;
-
-                        bool isInBlacklistedPath = false;
-                        foreach (string path in blacklistPaths)
-                        {
-                            if (pathTransformCache.TryGetValue(path, out Transform pathTransform))
-                            {
-                                if (current.IsChildOf(pathTransform))
-                                {
-                                    isInBlacklistedPath = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (isInBlacklistedPath) continue;
-
-                        bool isObstacle = false;
-                        foreach (string path in obstaclePaths)
-                        {
-                            if (pathTransformCache.TryGetValue(path, out Transform pathTransform))
-                            {
-                                if (current.IsChildOf(pathTransform))
-                                {
-                                    isObstacle = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (isObstacle && current.GetComponent<Collider>() != null)
-                        {
-                            activeObjects.Add(current.gameObject);
-                        }
-
-                        foreach (Transform child in current)
-                        {
-                            stack.Push(child);
-                        }
-                    }
-                }
-            }
-        }
-        public void InitializeObjects()
-        {
-            try
-            {
-                if (Rig.Instance != null)
-                {
-                    ScanActiveObjects2();
-
-                    objectsInitialized = (activeObjects.Count > 0 && Rig.Instance.leftHand != null && Rig.Instance.rightHand != null);
-
-                    if (objectsInitialized)
-                    {
-                        Debug.Log($"Successfully initialized objects. Found {activeObjects.Count} active objects to track.");
-                        Debug.Log($"Blacklisted terms: {string.Join(", ", blacklistTerms)}");
-                        Debug.Log($"Blacklisted paths: {string.Join(", ", blacklistPaths)}");
-                    }
-                    else
-                    {
-                        Debug.LogWarning("Not all objects could be found or initialized");
-                    }
-                }
-                else
-                {
-                    Debug.LogError("Rig.Instance is null");
-                }
-            }
-            catch (Exception e)
-            {
-                Debug.LogError("Error initializing objects with Rig: " + e.Message);
-            }
-        }
         public void CheckCollisions()
         {
             if (!objectsInitialized)
@@ -912,13 +1067,13 @@ namespace WalkSimulator.Bot
 
             leftHandCollisions.Clear();
             rightHandCollisions.Clear();
-
             bool anyCollision = false;
 
             foreach (GameObject obj in activeObjects)
             {
                 if (obj == null) continue;
 
+                // Simple distance-based collision check
                 bool leftHand = IsTouchingObject(Rig.Instance.leftHand.gameObject, obj);
                 bool rightHand = IsTouchingObject(Rig.Instance.rightHand.gameObject, obj);
 
@@ -936,132 +1091,28 @@ namespace WalkSimulator.Bot
             }
 
             UpdateCollisionState();
-
-            if (anyCollision)
-            {
-                ApplyCollisionEffects();
-            }
-            else
-            {
-                ResetCollisionEffects();
-            }
         }
         private bool IsTouchingObject(GameObject hand, GameObject other)
         {
-            if (hand == null || other == null)
+            if (hand == null || other == null) return false;
+
+            const float maxDistance = 0.3f;
+            Vector3 handPosition = hand.transform.position;
+            Vector3 otherPosition = other.transform.position;
+
+            float distance = Vector3.Distance(handPosition, otherPosition);
+            if (distance <= maxDistance)
             {
-                Debug.LogWarning($"IsTouchingObject called with null objects: hand={hand != null}, other={other != null}");
-                return false;
+                return true;
             }
 
-            try
+            Vector3 direction = otherPosition - handPosition;
+            if (Physics.Raycast(handPosition, direction.normalized, out RaycastHit hit, maxDistance))
             {
-                Collider[] handColliders = hand.GetComponentsInChildren<Collider>();
-                Collider[] otherColliders = other.GetComponentsInChildren<Collider>();
-
-                //if (handColliders.Length == 0 || otherColliders.Length == 0)
-                //{
-                    return SimplifiedCollisionCheck(hand, other);
-               // }
-               /*
-                foreach (Collider handCol in handColliders)
-                {
-                    foreach (Collider otherCol in otherColliders)
-                    {
-                        if (handCol.isTrigger || otherCol.isTrigger) { continue; }
-                        if (handCol.bounds.Intersects(otherCol.bounds))
-                        {
-                            Vector3 direction;
-                            float distance;
-
-                            if (Physics.ComputePenetration(handCol, handCol.transform.position, handCol.transform.rotation, otherCol, otherCol.transform.position, otherCol.transform.rotation, out direction, out distance))
-                            {
-                                return true;
-                            }
-                        }
-                    }
-                }
-
-                return false;
-               */
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"Error in IsTouchingObject: {e.Message}");
-                return false;
-            }
-        }
-        private bool SimplifiedCollisionCheck(GameObject hand, GameObject other)
-        {
-            if (hand == null || other == null)
-            {
-                Debug.LogWarning($"IsTouchingObject called with null objects: hand={hand != null}, other={other != null}");
-                return false;
+                return hit.collider.gameObject == other || hit.transform.IsChildOf(other.transform);
             }
 
-            try
-            {
-                const float maxDistance = 0.3f; // 1.0F for big things // 0.3F for super close
-                Vector3 handPosition = hand.transform.position;
-                Collider[] nearbyColliders = Physics.OverlapSphere(handPosition, maxDistance);
-                foreach (var col in nearbyColliders)
-                {
-                    if (col.gameObject == other || col.transform.IsChildOf(other.transform))
-                    {
-                        return true;
-                    }
-                }
-
-                Vector3 primaryDirection = other.transform.position - handPosition;
-                float actualDistance = primaryDirection.magnitude;
-
-                if (actualDistance <= maxDistance * 0.7f) // 1.5F for big things
-                {
-                    Ray centerRay = new Ray(handPosition, primaryDirection.normalized);
-                    if (Physics.Raycast(centerRay, out RaycastHit hitInfo, maxDistance))
-                    {
-                        if (hitInfo.collider != null && (hitInfo.collider.gameObject == other || hitInfo.transform.IsChildOf(other.transform)))
-                        {
-                            return true;
-                        }
-                    }
-
-                    Vector3[] directions = new Vector3[]
-                    {
-                        Vector3.up,
-                        Vector3.down,
-                        Vector3.left,
-                        Vector3.right,
-                        Vector3.forward,
-                        Vector3.back,
-                        primaryDirection.normalized + Vector3.up * 0.1f,
-                        primaryDirection.normalized + Vector3.down * 0.1f,
-                        primaryDirection.normalized + Vector3.left * 0.1f,
-                        primaryDirection.normalized + Vector3.right * 0.1f,
-                        primaryDirection.normalized + Vector3.forward * 0.1f,
-                        primaryDirection.normalized + Vector3.back * 0.1f
-                    };
-
-                    foreach (Vector3 dir in directions)
-                    {
-                        Ray ray = new Ray(handPosition, dir.normalized);
-                        if (Physics.Raycast(ray, out hitInfo, maxDistance))
-                        {
-                            if (hitInfo.collider != null && (hitInfo.collider.gameObject == other || hitInfo.transform.IsChildOf(other.transform)))
-                            {
-                                return true;
-                            }
-                        }
-                    }
-                }
-
-                return false;
-            }
-            catch (Exception e)
-            {
-                Debug.LogError($"Error in SimplifiedCollisionCheck: {e.Message}");
-                return false;
-            }
+            return false;
         }
         private void UpdateCollisionState()
         {
@@ -1083,20 +1134,36 @@ namespace WalkSimulator.Bot
                 }
             }
 
-            if (collisions.Count > 0)
-            {
-                collisionState = string.Join(", ", collisions);
-            }
-            else
-            {
-                collisionState = "No Collisions";
-            }
+            collisionState = collisions.Count > 0 ? string.Join(", ", collisions) : "No Collisions";
         }
-        private void ApplyCollisionEffects()
+        public void InitializeObjects()
         {
-            //Debug.Log("TOUCHED OBJECTS: " + collisionState);
+            try
+            {
+                if (Rig.Instance != null)
+                {
+                    ScanActiveObjects();
+                    objectsInitialized = (activeObjects.Count > 0 && Rig.Instance.leftHand != null && Rig.Instance.rightHand != null);
+                    
+                    if (objectsInitialized)
+                    {
+                        logger.LogInfo($"Successfully initialized objects. Found {activeObjects.Count} active objects to track.");
+                    }
+                    else
+                    {
+                        logger.LogWarning("Not all objects could be found or initialized");
+                    }
+                }
+                else
+                {
+                    logger.LogError("Rig.Instance is null");
+                }
+            }
+            catch (Exception e)
+            {
+                logger.LogError("Error initializing objects: " + e.Message);
+            }
         }
-        private void ResetCollisionEffects() { }
         #endregion
         #endregion
         #region Preset Management
@@ -1360,150 +1427,6 @@ namespace WalkSimulator.Bot
                     })
                 },
             };
-        }
-        #endregion
-        #region NavMesh
-        public void PathfindTo(Vector3 destination)
-        {
-            if (!isSelectingPathPoints)
-            {
-                BuildNavMesh();
-                isSelectingPathPoints = true;
-                selectedPoints.Clear();
-                selectedPoints.Add(GorillaLocomotion.GTPlayer.Instance.bodyCollider.transform.position);
-                logger.LogInfo("Started path point selection. Click points to create path");
-
-                NavMeshPath path = new NavMeshPath();
-                if (NavMesh.CalculatePath(transform.position, destination, NavMesh.AllAreas, path))
-                {
-                    if (path.status == NavMeshPathStatus.PathComplete)
-                    {
-                        selectedPoints.AddRange(path.corners);
-                        lineRenderers.pathPositions = new List<Vector3>(selectedPoints);
-                        lineRenderers.UpdatePathLineRenderer();
-                        logger.LogInfo("Initial path calculated. Modify if needed.");
-                    }
-                }
-            }
-            else
-            {
-                isSelectingPathPoints = false;
-                selectedPoints.Add(destination);
-
-                lineRenderers.pathPositions = new List<Vector3>(selectedPoints);
-                lineRenderers.UpdatePathLineRenderer();
-                followPathEnabled = true;
-                logger.LogInfo("Path created through selected points.");
-            }
-        }
-        public void AddPathPoint(Vector3 point)
-        {
-            if (isSelectingPathPoints)
-            {
-                selectedPoints.Add(point);
-                lineRenderers.pathPositions = new List<Vector3>(selectedPoints);
-                lineRenderers.UpdatePathLineRenderer();
-                logger.LogInfo($"Added path point: {point}");
-            }
-        }
-        private void BuildNavMesh()
-        {
-            var colliders = FindObjectsOfType<Collider>();
-            sources.Clear();
-            bounds = new Bounds();
-
-            activeObjects.Clear();
-
-            foreach (var collider in colliders)
-            {
-                if (!collider.enabled) continue;
-
-                if (!activeObjects.Contains(collider.gameObject))
-                {
-                    activeObjects.Add(collider.gameObject);
-                }
-
-                NavMeshBuildSource source = new NavMeshBuildSource();
-
-                if (collider is BoxCollider box)
-                {
-                    source.shape = NavMeshBuildSourceShape.Box;
-                    source.size = Vector3.Scale(box.size, box.transform.lossyScale);
-                    source.transform = Matrix4x4.TRS(box.transform.TransformPoint(box.center), box.transform.rotation, Vector3.one);
-                }
-                else if (collider is SphereCollider sphere)
-                {
-                    source.shape = NavMeshBuildSourceShape.Sphere;
-                    float scale = Mathf.Max(sphere.transform.lossyScale.x, sphere.transform.lossyScale.y, sphere.transform.lossyScale.z);
-                    source.size = new Vector3(sphere.radius * 2 * scale, sphere.radius * 2 * scale, sphere.radius * 2 * scale);
-                    source.transform = Matrix4x4.TRS(sphere.transform.TransformPoint(sphere.center), sphere.transform.rotation, Vector3.one);
-                }
-                else if (collider is CapsuleCollider capsule)
-                {
-                    source.shape = NavMeshBuildSourceShape.Capsule;
-                    float scale = Mathf.Max(capsule.transform.lossyScale.x, capsule.transform.lossyScale.z);
-                    source.size = new Vector3(capsule.radius * 2 * scale, capsule.height * capsule.transform.lossyScale.y, capsule.radius * 2 * scale);
-                    source.transform = Matrix4x4.TRS(capsule.transform.TransformPoint(capsule.center), capsule.transform.rotation, Vector3.one);
-                }
-                else if (collider is MeshCollider meshCollider && meshCollider.sharedMesh != null)
-                {
-                    try
-                    {
-                        source.shape = NavMeshBuildSourceShape.Box;
-                        var bounds = meshCollider.bounds;
-                        source.size = bounds.size;
-                        source.transform = Matrix4x4.TRS(bounds.center, meshCollider.transform.rotation, Vector3.one);
-                        var topSource = new NavMeshBuildSource
-                        {
-                            shape = NavMeshBuildSourceShape.Box,
-                            size = new Vector3(bounds.size.x, 0.1f, bounds.size.z),
-                            transform = Matrix4x4.TRS(
-                                new Vector3(bounds.center.x, bounds.max.y + 0.05f, bounds.center.z),
-                                meshCollider.transform.rotation,
-                                Vector3.one
-                            ),
-                            area = 0
-                        };
-                        sources.Add(topSource);
-                    }
-                    catch (Exception e)
-                    {
-                        logger.LogWarning($"Failed to process MeshCollider {meshCollider.name}: {e.Message}");
-                        continue;
-                    }
-                }
-                else
-                {
-                    continue;
-                }
-
-                source.area = 0;
-                sources.Add(source);
-                bounds.Encapsulate(collider.bounds);
-            }
-            avoidObjects = true;
-            bounds.Expand(10.0f);
-            var buildSettings = NavMesh.GetSettingsByID(0);
-            buildSettings.agentHeight = 2.0f;
-            buildSettings.agentRadius = 1.0f;
-            buildSettings.agentClimb = 0.5f;
-            buildSettings.minRegionArea = 0.1f;
-            buildSettings.overrideVoxelSize = true;
-            buildSettings.voxelSize = 0.17f;
-
-            navMeshData = NavMeshBuilder.BuildNavMeshData(buildSettings, sources, bounds, Vector3.zero, Quaternion.identity
-            );
-
-            if (navMeshData != null)
-            {
-                if (navMeshInstance.valid) { navMeshInstance.Remove(); }
-                navMeshInstance = NavMesh.AddNavMeshData(navMeshData);
-                logger.LogInfo("NavMesh built successfully with object avoidance enabled");
-            }
-            else
-            {
-                logger.LogError("Failed to build NavMesh");
-            }
         }
         #endregion
     }
