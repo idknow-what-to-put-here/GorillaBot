@@ -373,6 +373,8 @@ namespace WalkSimulator.Bot
     #endregion
     public class PlayerFollower : MonoBehaviour
     {
+        #region Fields and Properties
+        // Core Components
         private PlayerFollowerGUI gui;
         public MovementRecorder movementRecorder;
         public ConfigEntry<string> DiscordWebhookUrl;
@@ -384,14 +386,15 @@ namespace WalkSimulator.Bot
         private TaggingStateMachine taggingStateMachine;
         private FleeStateMachine fleeStateMachine;
 
+        // Movement Constants
         public const float TARGET_PROXIMITY_THRESHOLD = 0.5f;
         private const float MAX_TURN_SPEED = 15f;
         private const float TURN_SPEED_DIVISOR = 10f;
         private const float ROTATION_THRESHOLD = 1f;
         private const float JUMP_HEIGHT_THRESHOLD = 0.6f;
         public const float JUMP_PREPARATION_DISTANCE = 1.2f;
-        //private const float WAYPOINT_UPDATE_INTERVAL = 5.0f;
 
+        // Movement State
         public bool followPlayerEnabled;
         public bool followPathEnabled;
         public Player currentPlayer;
@@ -400,7 +403,7 @@ namespace WalkSimulator.Bot
         public LineRenderers lineRenderers;
         private List<Vector3> pathPositions;
 
-        // Line configuration
+        // Line Configuration
         public Color pathColor = Color.red;
         public Color directionColor = Color.yellow;
         public float lineAlpha = 1f;
@@ -409,19 +412,19 @@ namespace WalkSimulator.Bot
         public bool showPath = true;
         public bool showDirection = true;
 
-        // Jump
+        // Jump Configuration
         public bool isPreparingToJump = false;
         public Vector3 jumpTarget;
         public bool waitingForJumpStart = true;
         public Vector3 jumpWaypointStart;
 
-        // Tagging
+        // Tagging Configuration
         public bool isTagging = false;
         public float tagDuration = 60f;
         public float tagTimer = 0f;
         public Player taggedPlayer;
 
-        // Hand
+        // Hand Configuration
         public PlayerFollowerGUI.HandButton selectedHandButton = PlayerFollowerGUI.HandButton.Grip;
         public PlayerFollowerGUI.ActivationPoint activationPoint = PlayerFollowerGUI.ActivationPoint.OnReachGround;
         public float handDownDuration = 0.5f;
@@ -432,6 +435,7 @@ namespace WalkSimulator.Bot
         // Object Scanning
         public bool avoidObjects = false;
         public List<GameObject> activeObjects = new List<GameObject>();
+        public HashSet<GameObject> blacklistedObjects = new HashSet<GameObject>();
         public float scanInterval = 100f;
         private float scanTimer = 0f;
         public float avoidanceRadius = 5f;
@@ -444,44 +448,72 @@ namespace WalkSimulator.Bot
             "Environment Objects/LocalObjects_Prefab/Forest/Terrain/pitgeo/",
             "System Scripts/ZoneGraph/City",
             "System Scripts/ZoneGraph/TreeRoom",
-            //"Environment Objects/LocalObjects_Prefab/Forest/Props/"
         };
 
-        // Flee
+        // Flee Configuration
         public bool fleeEnabled;
         public float FLEE_RADIUS = 10f;
 
-        // NavMesh
-        private NavMeshData navMeshData;
-        private NavMeshDataInstance navMeshInstance;
-        private List<NavMeshBuildSource> sources = new List<NavMeshBuildSource>();
-        private Bounds bounds;
-        public bool isSelectingPathPoints = false;
-        public List<Vector3> selectedPoints = new List<Vector3>();
-
-        // Colissions
+        // Collision Detection
         public string collisionState = "No Collisions";
         private Dictionary<GameObject, bool> leftHandCollisions = new Dictionary<GameObject, bool>();
         private Dictionary<GameObject, bool> rightHandCollisions = new Dictionary<GameObject, bool>();
         public bool objectsInitialized = false;
-        private readonly string[] blacklistTerms = {  }; 
+        private readonly string[] blacklistTerms = { };
         private readonly string[] blacklistPaths = { "Player Objects", "System Scripts/ZoneGraph/Tutorial", "System Scripts/ZoneGraph/Forest", "System Scripts/ZoneGraph/Clouds" };
         private Dictionary<string, Transform> pathTransformCache = new Dictionary<string, Transform>();
 
+        // Gun Configuration
+        public bool gunEnabled = false;
+        public float gunRange = 50f;
+        public Color gunRayColor = Color.red;
+        public float gunRayDuration = 0.2f;
+        public float gunRayWidth = 0.05f;
+        private float lastShotTime = 0f;
+        public LayerMask gunLayers = -1;
+        private LineRenderer gunRayRenderer;
+
+        // Box Configuration
+        public bool boxShootingMode = false;
+        private Vector3? firstShotPoint = null;
+        private List<LineRenderer> boxRenderers = new List<LineRenderer>();
+        private Color boxColor = new Color(1f, 0.5f, 0f, 0.5f);
+        private float boxLineWidth = 0.05f;
+        private const int BOX_EDGES = 12;
+        public float boxDisplayDuration = 60f;
+
+        #endregion
+
+        #region Init
         private void Awake()
         {
+            Initialize();
+            Invoke("InitializeObjects", 1.0f);
+        }
+        private void OnGUI()
+        {
+            gui.OnGUI();
+        }
+        private void FixedUpdate()
+        {
+            Update();
+        }
+        private void OnDestroy()
+        {
+            CleanupResources();
+        }
+        private void OnApplicationQuit()
+        {
+            SendLogs();
+        }
+        private void Initialize()
+        {
+            // Initialize Components
             gui = new PlayerFollowerGUI(this);
             movementRecorder = new MovementRecorder(this);
-
-            // Initialize State Machines
-            movementStateMachine = new MovementStateMachine(this);
-            pathingStateMachine = new PathingStateMachine(this);
-            followingStateMachine = new FollowingStateMachine(this);
-            taggingStateMachine = new TaggingStateMachine(this);
-            fleeStateMachine = new FleeStateMachine(this);
-
-            // Initialize Components
             logger = BepInEx.Logging.Logger.CreateLogSource("WalkSimulator");
+            
+            // Setup Logger
             logger.LogEvent += (logLevel, message) =>
             {
                 string logMessage = $"{message}";
@@ -493,92 +525,95 @@ namespace WalkSimulator.Bot
             };
             logger.LogInfo("PlayerFollower plugin loaded!");
 
+            // Initialize Line Renderers
+            GameObject lrObj = new GameObject("LineRenderers");
+            lineRenderers = lrObj.AddComponent<LineRenderers>();
+            lineRenderers.Initialize("PathLine", "DirectionLine", pathColor, directionColor, lineAlpha, pathLineWidth, directionLineWidth);
+            pathPositions = new List<Vector3>();
+
+            // Initialize Gun Ray Renderer
+            GameObject gunRayObj = new GameObject("GunRayRenderer");
+            gunRayRenderer = gunRayObj.AddComponent<LineRenderer>();
+            gunRayRenderer.material = new Material(Shader.Find("Sprites/Default"));
+            gunRayRenderer.startWidth = gunRayWidth;
+            gunRayRenderer.endWidth = gunRayWidth;
+            gunRayRenderer.startColor = gunRayColor;
+            gunRayRenderer.endColor = gunRayColor;
+            gunRayRenderer.positionCount = 2;
+            gunRayRenderer.enabled = false;
+
+            // Initialize Box Renderers
+            GameObject boxRenderersObj = new GameObject("BoxRenderers");
+            for (int i = 0; i < BOX_EDGES; i++)
+            {
+                GameObject edgeObj = new GameObject($"BoxEdge_{i}");
+                edgeObj.transform.SetParent(boxRenderersObj.transform);
+                LineRenderer edgeRenderer = edgeObj.AddComponent<LineRenderer>();
+                edgeRenderer.material = new Material(Shader.Find("Sprites/Default"));
+                edgeRenderer.startWidth = boxLineWidth;
+                edgeRenderer.endWidth = boxLineWidth;
+                edgeRenderer.startColor = boxColor;
+                edgeRenderer.endColor = boxColor;
+                edgeRenderer.positionCount = 2;
+                edgeRenderer.enabled = false;
+                boxRenderers.Add(edgeRenderer);
+            }
+
+            // Create Preset Directory
             string presetDir = GetPresetDirectory();
             if (!Directory.Exists(presetDir))
             {
                 Directory.CreateDirectory(presetDir);
                 logger.LogInfo($"Created preset directory: {presetDir}");
             }
-            //RefreshPresetFiles();
 
-            // Initialize Animator
-            if (Rig.Instance.Animator == null || !(Rig.Instance.Animator is WalkAnimator))
-            {
-                Rig.Instance.Animator = new GameObject("WalkAnimator").AddComponent<WalkAnimator>();
-            }
-            walkAnimator = (WalkAnimator)Rig.Instance.Animator;
+            // Initialize State Machines
+            movementStateMachine = new MovementStateMachine(this);
+            pathingStateMachine = new PathingStateMachine(this);
+            followingStateMachine = new FollowingStateMachine(this);
+            taggingStateMachine = new TaggingStateMachine(this);
+            fleeStateMachine = new FleeStateMachine(this);
 
-            // Initialize LineRenderers
-            GameObject lrObj = new GameObject("LineRenderers");
-            lineRenderers = lrObj.AddComponent<LineRenderers>();
-            lineRenderers.Initialize("PathLine", "DirectionLine", pathColor, directionColor, lineAlpha, pathLineWidth, directionLineWidth);
-
-            pathPositions = new List<Vector3>();
-
+            // Initialize Presets
             InitializeHardcodedPresets();
-
-            Invoke("InitializeObjects", 1.0f);
-
         }
-        public void ScanActiveObjects()
+        private void Update()
         {
-            activeObjects.Clear();
-            GameObject[] rootObjects = SceneManager.GetActiveScene().GetRootGameObjects();
+            // Update Movement Recorder
+            movementRecorder.FixedUpdate();
 
-            foreach (GameObject root in rootObjects)
-            {
-                if (blacklistPaths.Contains(root.name)) continue;
-
-                Stack<Transform> stack = new Stack<Transform>();
-                stack.Push(root.transform);
-
-                while (stack.Count > 0)
-                {
-                    Transform current = stack.Pop();
-                    if (current.gameObject.activeInHierarchy)
-                    {
-                        if (current == transform || (Rig.Instance != null && current == Rig.Instance.body)) continue;
-
-                        bool isObstacle = obstaclePaths.Any(path => current.transform.IsChildOf(GameObject.Find(path)?.transform));
-                        if (isObstacle && current.GetComponent<Collider>() != null)
-                        {
-                            activeObjects.Add(current.gameObject);
-                        }
-
-                        foreach (Transform child in current)
-                        {
-                            stack.Push(child);
-                        }
-                    }
-                }
-            }
-        }
-        private void OnGUI()
-        {
-            gui.OnGUI();
-            //Test.Instance.OnGUI();
-
-        }
-        private void FixedUpdate()
-        {
-            //Test.Instance.Update();
-
+            // Update Collisions
             if (Rig.Instance != null && Rig.Instance.active)
             {
                 CheckCollisions();
             }
 
-            movementRecorder.FixedUpdate();
-            Transform localBody = Rig.Instance.body;
-
-
-            /*
-            if (Time.time - lastWaypointUpdateTime >= WAYPOINT_UPDATE_INTERVAL)
+            // Update Gun Ray
+            if (gunEnabled && gunRayRenderer != null)
             {
-                UpdateWaypoints();
-                lastWaypointUpdateTime = Time.time;
+                Transform head = Rig.Instance.head;
+                if (head != null)
+                {
+                    RaycastHit hit;
+                    if (Physics.Raycast(head.position, head.forward, out hit, gunRange))
+                    {
+                        gunRayRenderer.SetPosition(0, head.position);
+                        gunRayRenderer.SetPosition(1, hit.point);
+                    }
+                    else
+                    {
+                        gunRayRenderer.SetPosition(0, head.position);
+                        gunRayRenderer.SetPosition(1, head.position + head.forward * gunRange);
+                    }
+                    gunRayRenderer.enabled = true;
+                }
             }
-            */
+            else if (gunRayRenderer != null)
+            {
+                gunRayRenderer.enabled = false;
+            }
+
+            // Update Movement
             if (fleeEnabled)
             {
                 fleeStateMachine.FleeFromTaggers();
@@ -602,6 +637,7 @@ namespace WalkSimulator.Bot
                 lineRenderers.DisableLineRenderers();
             }
 
+            // Update Tagging
             if (isTagging)
             {
                 if (taggedPlayer != null)
@@ -619,6 +655,7 @@ namespace WalkSimulator.Bot
                 }
             }
 
+            // Update Scanning
             scanTimer += Time.deltaTime;
             if (scanTimer >= scanInterval)
             {
@@ -626,27 +663,66 @@ namespace WalkSimulator.Bot
                 scanTimer = 0f;
             }
         }
-        private void OnDestroy()
+        public void ScanActiveObjects()
+        {
+            activeObjects.Clear();
+            GameObject[] rootObjects = SceneManager.GetActiveScene().GetRootGameObjects();
+
+            foreach (GameObject root in rootObjects)
+            {
+                if (blacklistPaths.Contains(root.name)) continue;
+
+                Stack<Transform> stack = new Stack<Transform>();
+                stack.Push(root.transform);
+
+                while (stack.Count > 0)
+                {
+                    Transform current = stack.Pop();
+                    if (current.gameObject.activeInHierarchy)
+                    {
+                        if (current == transform || (Rig.Instance != null && current == Rig.Instance.body)) continue;
+                        if (blacklistedObjects.Contains(current.gameObject)) continue;
+
+                        bool isObstacle = obstaclePaths.Any(path => current.transform.IsChildOf(GameObject.Find(path)?.transform));
+                        if (isObstacle && current.GetComponent<Collider>() != null)
+                        {
+                            activeObjects.Add(current.gameObject);
+                        }
+
+                        foreach (Transform child in current)
+                        {
+                            stack.Push(child);
+                        }
+                    }
+                }
+            }
+        }
+        #endregion
+        #region Cleanup Methods
+        private void CleanupResources()
         {
             if (lineRenderers != null)
             {
                 if (lineRenderers.pathLine.GameObject != null) Destroy(lineRenderers.pathLine.GameObject);
                 if (lineRenderers.directionLine.GameObject != null) Destroy(lineRenderers.directionLine.GameObject);
             }
-            /*
-            if (!string.IsNullOrEmpty(DiscordWebhookUrl.Value))
+            if (gunRayRenderer != null)
             {
-                string logs = Logging.GetFullLogText();
-                if (!string.IsNullOrEmpty(logs))
-                {
-                    GameObject senderObj = new GameObject("WebhookSender");
-                    WebhookSender sender = senderObj.AddComponent<WebhookSender>();
-                    sender.Initialize(DiscordWebhookUrl.Value, logs);
-                }
+                Destroy(gunRayRenderer.gameObject);
             }
-            */
+            if (boxRenderers.Count > 0)
+            {
+                foreach (var renderer in boxRenderers)
+                {
+                    if (renderer != null)
+                    {
+                        Destroy(renderer.gameObject);
+                    }
+                }
+                boxRenderers.Clear();
+            }
         }
-        private void OnApplicationQuit()
+        private void SendLogs()
         {
             if (!string.IsNullOrEmpty(DiscordWebhookUrl.Value))
             {
@@ -659,6 +735,7 @@ namespace WalkSimulator.Bot
                 }
             }
         }
+        #endregion
         #region Movement
         #region Flee
         public void StartFleeing()
@@ -932,7 +1009,6 @@ namespace WalkSimulator.Bot
                 lineRenderers.DisableLineRenderers();
                 return (null, null);
             }
-            //logger.LogInfo($"Got Players Pos");
 
             return (targetRigObj.transform, localBody);
         }
@@ -1073,7 +1149,6 @@ namespace WalkSimulator.Bot
             {
                 if (obj == null) continue;
 
-                // Simple distance-based collision check
                 bool leftHand = IsTouchingObject(Rig.Instance.leftHand.gameObject, obj);
                 bool rightHand = IsTouchingObject(Rig.Instance.rightHand.gameObject, obj);
 
@@ -1304,21 +1379,6 @@ namespace WalkSimulator.Bot
         }
         private void InitializeHardcodedPresets()
         {
-            /*
-            gui.hardcodedPresets = new Dictionary<string, PathPreset>
-            {
-                {
-                    "test",
-                    new PathPreset("test", new List<Vector3>
-                    {
-                        new Vector3(10f, 0f, 10f),
-                        new Vector3(20f, 0f, 10f),
-                        new Vector3(20f, 0f, 20f),
-                        new Vector3(10f, 0f, 20f)
-                    })
-                },
-            };
-            */
             gui.hardcodedPresets = new Dictionary<string, PathPreset>
             {
                 {
@@ -1429,5 +1489,168 @@ namespace WalkSimulator.Bot
             };
         }
         #endregion
+        public void ShootGun()
+        {
+            if (!gunEnabled || Time.time - lastShotTime < 0.5f) return;
+
+            lastShotTime = Time.time;
+            Transform head = Rig.Instance.head;
+            if (head == null) return;
+
+            Vector2 mousePos = UnityEngine.InputSystem.Mouse.current.position.ReadValue();
+            Ray ray = Camera.main.ScreenPointToRay(new Vector3(mousePos.x, mousePos.y, 0));
+            RaycastHit hit;
+
+            if (Physics.Raycast(ray, out hit, gunRange, gunLayers))
+            {
+                HashSet<GameObject> connectedObjects = new HashSet<GameObject>();
+                Queue<GameObject> objectsToCheck = new Queue<GameObject>();
+                objectsToCheck.Enqueue(hit.collider.gameObject);
+
+                while (objectsToCheck.Count > 0)
+                {
+                    GameObject current = objectsToCheck.Dequeue();
+                    if (connectedObjects.Contains(current)) continue;
+
+                    connectedObjects.Add(current);
+                    logger.LogInfo($"Hit object: {current.name}");
+
+                    Joint[] joints = current.GetComponents<Joint>();
+                    foreach (Joint joint in joints)
+                    {
+                        if (joint.connectedBody != null && !connectedObjects.Contains(joint.connectedBody.gameObject))
+                        {
+                            objectsToCheck.Enqueue(joint.connectedBody.gameObject);
+                        }
+                    }
+
+                    Collider[] childColliders = current.GetComponentsInChildren<Collider>();
+                    foreach (Collider childCollider in childColliders)
+                    {
+                        if (!connectedObjects.Contains(childCollider.gameObject))
+                        {
+                            objectsToCheck.Enqueue(childCollider.gameObject);
+                        }
+                    }
+
+                    Transform parent = current.transform.parent;
+                    while (parent != null)
+                    {
+                        Collider parentCollider = parent.GetComponent<Collider>();
+                        if (parentCollider != null && !connectedObjects.Contains(parent.gameObject))
+                        {
+                            objectsToCheck.Enqueue(parent.gameObject);
+                        }
+                        parent = parent.parent;
+                    }
+                }
+
+                if (gunRayRenderer != null)
+                {
+                    gunRayRenderer.SetPosition(0, head.position);
+                    gunRayRenderer.SetPosition(1, hit.point);
+                    gunRayRenderer.enabled = true;
+                    StartCoroutine(DisableGunRayAfterDelay());
+                }
+            }
+            else
+            {
+                if (gunRayRenderer != null)
+                {
+                    gunRayRenderer.SetPosition(0, head.position);
+                    gunRayRenderer.SetPosition(1, head.position + ray.direction * gunRange);
+                    gunRayRenderer.enabled = true;
+                    StartCoroutine(DisableGunRayAfterDelay());
+                }
+            }
+        }
+
+        // todo: use the box to blacklist areas for the bot cant go
+        public void SetBoxPoint1()
+        {
+            if (!boxShootingMode) return;
+
+            Transform head = Rig.Instance.head;
+            if (head == null) return;
+
+            firstShotPoint = head.position;
+            logger.LogInfo($"First box point set at: {firstShotPoint}");
+        }
+        public void SetBoxPoint2()
+        {
+            if (!boxShootingMode || !firstShotPoint.HasValue) return;
+
+            Transform head = Rig.Instance.head;
+            if (head == null) return;
+
+            Vector3 secondPoint = head.position;
+            CreateBox(firstShotPoint.Value, secondPoint);
+            firstShotPoint = null;
+        }
+        private void CreateBox(Vector3 point1, Vector3 point2)
+        {
+            Vector3 min = new Vector3( Mathf.Min(point1.x, point2.x), Mathf.Min(point1.y, point2.y), Mathf.Min(point1.z, point2.z) );
+            Vector3 max = new Vector3(Mathf.Max(point1.x, point2.x), Mathf.Max(point1.y, point2.y), Mathf.Max(point1.z, point2.z));
+
+            Vector3[] vertices = new Vector3[8];
+            vertices[0] = new Vector3(min.x, min.y, min.z); // Bottom front left
+            vertices[1] = new Vector3(max.x, min.y, min.z); // Bottom front right
+            vertices[2] = new Vector3(max.x, min.y, max.z); // Bottom back right
+            vertices[3] = new Vector3(min.x, min.y, max.z); // Bottom back left
+            vertices[4] = new Vector3(min.x, max.y, min.z); // Top front left
+            vertices[5] = new Vector3(max.x, max.y, min.z); // Top front right
+            vertices[6] = new Vector3(max.x, max.y, max.z); // Top back right
+            vertices[7] = new Vector3(min.x, max.y, max.z); // Top back left
+
+            int[,] edges = new int[12, 2] {
+                {0, 1}, // Bottom front
+                {1, 2}, // Bottom right
+                {2, 3}, // Bottom back
+                {3, 0}, // Bottom left
+                {4, 5}, // Top front
+                {5, 6}, // Top right
+                {6, 7}, // Top back
+                {7, 4}, // Top left
+                {0, 4}, // Left front
+                {1, 5}, // Right front
+                {2, 6}, // Right back
+                {3, 7}  // Left back
+            };
+
+            for (int i = 0; i < BOX_EDGES; i++)
+            {
+                LineRenderer edgeRenderer = boxRenderers[i];
+                edgeRenderer.SetPosition(0, vertices[edges[i, 0]]);
+                edgeRenderer.SetPosition(1, vertices[edges[i, 1]]);
+                edgeRenderer.enabled = true;
+            }
+
+            logger.LogInfo("Box Vertices:");
+            for (int i = 0; i < vertices.Length; i++)
+            {
+                logger.LogInfo($"Vertex {i}: {vertices[i]}");
+            }
+
+            StartCoroutine(DisableBoxAfterDelay());
+        }
+        private IEnumerator DisableBoxAfterDelay()
+        {
+            yield return new WaitForSeconds(boxDisplayDuration);
+            foreach (var renderer in boxRenderers)
+            {
+                if (renderer != null)
+                {
+                    renderer.enabled = false;
+                }
+            }
+        }
+        private IEnumerator DisableGunRayAfterDelay()
+        {
+            yield return new WaitForSeconds(gunRayDuration);
+            if (gunRayRenderer != null)
+            {
+                gunRayRenderer.enabled = false;
+            }
+        }
     }
 }

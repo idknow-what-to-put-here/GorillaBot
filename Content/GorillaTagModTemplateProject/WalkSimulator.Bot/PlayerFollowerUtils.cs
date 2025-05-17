@@ -47,6 +47,59 @@ namespace WalkSimulator.Bot
             public List<Vector3> pathPositions = new List<Vector3>();
             public float lineAlpha;
 
+            public void DrawJumpArc(List<Vector3> arcPoints, Color color, float width)
+            {
+                if (arcPoints == null || arcPoints.Count < 2) return;
+
+                // Create or get jump arc line renderer
+                LineRenderer arcRenderer = GetOrCreateLineRenderer("JumpArcLine");
+                arcRenderer.startWidth = width;
+                arcRenderer.endWidth = width;
+                arcRenderer.startColor = color;
+                arcRenderer.endColor = color;
+                arcRenderer.positionCount = arcPoints.Count;
+                arcRenderer.SetPositions(arcPoints.ToArray());
+                arcRenderer.enabled = true;
+
+                // Start coroutine to fade out the arc
+                StartCoroutine(FadeOutJumpArc(arcRenderer));
+            }
+
+            private IEnumerator FadeOutJumpArc(LineRenderer arcRenderer)
+            {
+                float duration = 1f;
+                float elapsed = 0f;
+                Color startColor = arcRenderer.startColor;
+                Color endColor = new Color(startColor.r, startColor.g, startColor.b, 0f);
+
+                while (elapsed < duration)
+                {
+                    elapsed += Time.deltaTime;
+                    float alpha = Mathf.Lerp(1f, 0f, elapsed / duration);
+                    Color newColor = new Color(startColor.r, startColor.g, startColor.b, alpha);
+                    arcRenderer.startColor = newColor;
+                    arcRenderer.endColor = newColor;
+                    yield return null;
+                }
+
+                arcRenderer.enabled = false;
+            }
+
+            private LineRenderer GetOrCreateLineRenderer(string name)
+            {
+                Transform existingRenderer = transform.Find(name);
+                if (existingRenderer != null)
+                {
+                    return existingRenderer.GetComponent<LineRenderer>();
+                }
+
+                GameObject newRenderer = new GameObject(name);
+                newRenderer.transform.SetParent(transform);
+                LineRenderer lineRenderer = newRenderer.AddComponent<LineRenderer>();
+                lineRenderer.material = new Material(Shader.Find("Sprites/Default"));
+                lineRenderer.useWorldSpace = true;
+                return lineRenderer;
+            }
             public void Initialize(string pathLineName, string directionLineName, Color pathColor, Color directionColor, float alpha, float pathLineWidth, float directionLineWidth)
             {
                 lineAlpha = alpha;

@@ -15,17 +15,27 @@ namespace WalkSimulator.Bot
 {
     public class PlayerFollowerGUI : MonoBehaviour
     {
+        #region Fields and Properties
         private readonly PlayerFollower follower;
 
         // GUI Configuration
-        private const int WINDOW_WIDTH = 350;
-        private const int WINDOW_HEIGHT = 450;
+        private const int WINDOW_WIDTH = 550;
+        private const int WINDOW_HEIGHT = 675;
         private const int COLOR_PICKER_SIZE = 200;
         private Rect windowRect = new Rect(20, 20, WINDOW_WIDTH, WINDOW_HEIGHT);
         private bool showColorPicker = false;
         private bool editingPathColor = true;
         private Vector2 scrollPosition;
         private bool showPresetManager = false;
+
+        // Theme
+        public enum Theme { Dark, VeryDark, Light, Space, Purple, Oreo, RGB, Solarized, Neon, Forest }
+        public static Theme currentTheme = Theme.Dark;
+        private Theme lastAppliedTheme = (Theme)(-1);
+        private Color windowColor;
+        private Color buttonColor;
+        private Color textFieldColor;
+        private Color labelTextColor;
 
         // Preset colors
         private readonly Color[] colorPresets = new Color[]
@@ -38,7 +48,7 @@ namespace WalkSimulator.Bot
 
         // Tab management
         private int selectedTab = 0;
-        private readonly string[] tabNames = new string[] { "Line Settings", "Players", "Path Destinations", "Misc", "Logs" };
+        private readonly string[] tabNames = new string[] { "Line Settings", "Players", "Path", "Misc", "Logs" };
 
         // Preset management
         private string presetName = "DefaultPreset";
@@ -49,20 +59,29 @@ namespace WalkSimulator.Bot
         public Dictionary<string, PathPreset> hardcodedPresets;
         public IEnumerable<string> HardcodedPresetNames => hardcodedPresets.Keys;
 
-        // Replays & Presets sub-tabs.
+        // Replays & Presets sub-tabs
         private int replayPresetTabIndex = 0;
         private readonly string[] replayPresetTabNames = new string[] { "Replays", "Presets" };
-        private string saveReplayFilename = "";
 
-        // Loging
+        // Logging
         public static List<string> logMessages = new List<string>();
         private Vector2 logScrollPosition;
 
         // Styling
+        private GUIStyle windowStyle;
+        private GUIStyle buttonStyle;
+        private GUIStyle labelStyle;
+        private GUIStyle textFieldStyle;
+        private GUIStyle verticalScrollbarStyle;
+        private GUIStyle verticalScrollbarThumbStyle;
         private GUIStyle headerStyle;
         private GUIStyle sectionStyle;
         private GUIStyle sliderLabelStyle;
         private Color originalColorWhenPickerOpened;
+
+        // Constants
+        public static float buttonHeight = 30f;
+        public static int cornerRadius = 8;
 
         // Hand
         [Flags]
@@ -74,12 +93,13 @@ namespace WalkSimulator.Bot
             Secondary = 1 << 3  // 8
         }
         public enum ActivationPoint { OnReachGround, MidHold, OnRelease }
-        private bool isLeftHanded = true;
+        #endregion
 
         public PlayerFollowerGUI(PlayerFollower follower)
         {
             this.follower = follower;
         }
+
         public void AddLogMessage(string message)
         {
             string timestamp = DateTime.Now.ToString("HH:mm:ss");
@@ -88,29 +108,202 @@ namespace WalkSimulator.Bot
         public void OnGUI()
         {
             follower.RefreshPresetFiles();
+            ApplyTheme();
+            InitializeStyles();
+            DrawMainWindow();
+            DrawColorPicker();
+            DrawPresetManager();
+        }
 
-            headerStyle = new GUIStyle(GUI.skin.label)
+        #region GUI Initialization
+        private void ApplyTheme()
+        {
+            if (currentTheme != lastAppliedTheme)
             {
-                fontSize = 14,
-                fontStyle = FontStyle.Bold,
-                alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = Color.white }
-            };
+                switch (currentTheme)
+                {
+                    case Theme.Dark:
+                        windowColor = new Color(0.05f, 0.05f, 0.05f);
+                        buttonColor = new Color(0.1f, 0.1f, 0.1f);
+                        textFieldColor = new Color(0.1f, 0.1f, 0.1f);
+                        labelTextColor = Color.white;
+                        break;
+                    case Theme.VeryDark:
+                        windowColor = new Color(0.02f, 0.02f, 0.02f);
+                        buttonColor = new Color(0.03f, 0.03f, 0.03f);
+                        textFieldColor = new Color(0.03f, 0.03f, 0.03f);
+                        labelTextColor = Color.white;
+                        break;
+                    case Theme.Light:
+                        windowColor = new Color(0.8f, 0.8f, 0.8f);
+                        buttonColor = new Color(0.9f, 0.9f, 0.9f);
+                        textFieldColor = new Color(0.9f, 0.9f, 0.9f);
+                        labelTextColor = Color.black;
+                        break;
+                    case Theme.Space:
+                        windowColor = new Color(0f, 0f, 0.2f);
+                        buttonColor = new Color(0f, 0f, 0.3f);
+                        textFieldColor = new Color(0f, 0f, 0.3f);
+                        labelTextColor = Color.cyan;
+                        break;
+                    case Theme.Purple:
+                        windowColor = new Color(0.3f, 0f, 0.3f);
+                        buttonColor = new Color(0.4f, 0f, 0.4f);
+                        textFieldColor = new Color(0.4f, 0f, 0.4f);
+                        labelTextColor = Color.white;
+                        break;
+                    case Theme.Oreo:
+                        windowColor = Color.black;
+                        buttonColor = new Color(0.2f, 0.2f, 0.2f);
+                        textFieldColor = new Color(0.2f, 0.2f, 0.2f);
+                        labelTextColor = Color.white;
+                        break;
+                    case Theme.RGB:
+                        windowColor = Color.red;
+                        buttonColor = Color.green;
+                        textFieldColor = Color.blue;
+                        labelTextColor = Color.green;
+                        break;
+                    case Theme.Solarized:
+                        windowColor = new Color(0.0f, 0.168f, 0.211f);
+                        buttonColor = new Color(0.282f, 0.337f, 0.396f);
+                        textFieldColor = new Color(0.282f, 0.337f, 0.396f);
+                        labelTextColor = new Color(0.976f, 0.976f, 0.949f);
+                        break;
+                    case Theme.Neon:
+                        windowColor = Color.black;
+                        buttonColor = new Color(0.0f, 1.0f, 1.0f);
+                        textFieldColor = new Color(1.0f, 0.0f, 1.0f);
+                        labelTextColor = new Color(1.0f, 1.0f, 0.0f);
+                        break;
+                    case Theme.Forest:
+                        windowColor = new Color(0.133f, 0.545f, 0.133f);
+                        buttonColor = new Color(0.180f, 0.624f, 0.180f);
+                        textFieldColor = new Color(0.180f, 0.624f, 0.180f);
+                        labelTextColor = new Color(0.0f, 0.392f, 0.0f);
+                        break;
+                }
 
-            sectionStyle = new GUIStyle(GUI.skin.box)
+                windowStyle = null;
+                buttonStyle = null;
+                labelStyle = null;
+                textFieldStyle = null;
+                lastAppliedTheme = currentTheme;
+            }
+        }
+        private void InitializeStyles()
+        {
+            if (windowStyle == null)
             {
-                padding = new RectOffset(10, 10, 10, 10),
-                margin = new RectOffset(0, 0, 5, 5)
-            };
+                windowStyle = new GUIStyle(GUI.skin.window);
+                Texture2D windowTex = GUIHelper.MakeRoundedRectTexture(64, 64, windowColor, cornerRadius);
+                windowStyle.normal.background = windowTex;
+                windowStyle.active.background = windowTex;
+                windowStyle.hover.background = windowTex;
+                windowStyle.focused.background = windowTex;
+                windowStyle.onNormal.background = windowTex;
+                windowStyle.onActive.background = windowTex;
+                windowStyle.onHover.background = windowTex;
+                windowStyle.onFocused.background = windowTex;
+                windowStyle.normal.textColor = labelTextColor;
+                windowStyle.padding.top = 30;
+                windowStyle.fontSize = 24;
+                windowStyle.fontStyle = FontStyle.Bold;
+                windowStyle.border = new RectOffset(cornerRadius, cornerRadius, cornerRadius, cornerRadius);
+            }
 
-            sliderLabelStyle = new GUIStyle(GUI.skin.label)
+            if (buttonStyle == null)
             {
-                fontSize = 12,
-                alignment = TextAnchor.MiddleLeft
-            };
+                buttonStyle = new GUIStyle(GUI.skin.button);
+                Texture2D btnTex = GUIHelper.MakeRoundedRectTexture(64, 64, buttonColor, cornerRadius);
+                buttonStyle.normal.background = btnTex;
+                buttonStyle.active.background = btnTex;
+                buttonStyle.hover.background = btnTex;
+                buttonStyle.focused.background = btnTex;
+                buttonStyle.onNormal.background = btnTex;
+                buttonStyle.onActive.background = btnTex;
+                buttonStyle.onHover.background = btnTex;
+                buttonStyle.onFocused.background = btnTex;
+                buttonStyle.normal.textColor = labelTextColor;
+                buttonStyle.fontStyle = FontStyle.Bold;
+                buttonStyle.border = new RectOffset(cornerRadius, cornerRadius, cornerRadius, cornerRadius);
+            }
 
-            windowRect = GUILayout.Window(0, windowRect, DrawWindow, "Player Follower", GUI.skin.window);
+            if (labelStyle == null)
+            {
+                labelStyle = new GUIStyle(GUI.skin.label);
+                labelStyle.normal.textColor = labelTextColor;
+                labelStyle.fontStyle = FontStyle.Bold;
+                labelStyle.alignment = TextAnchor.MiddleCenter;
+            }
 
+            if (textFieldStyle == null)
+            {
+                textFieldStyle = new GUIStyle(GUI.skin.textField);
+                Texture2D textFieldTex = GUIHelper.MakeTex(2, 2, textFieldColor);
+                textFieldStyle.normal.background = textFieldTex;
+                textFieldStyle.active.background = textFieldTex;
+                textFieldStyle.hover.background = textFieldTex;
+                textFieldStyle.focused.background = textFieldTex;
+                textFieldStyle.onNormal.background = textFieldTex;
+                textFieldStyle.onActive.background = textFieldTex;
+                textFieldStyle.onHover.background = textFieldTex;
+                textFieldStyle.onFocused.background = textFieldTex;
+                textFieldStyle.normal.textColor = labelTextColor;
+                textFieldStyle.alignment = TextAnchor.MiddleCenter;
+            }
+
+            if (verticalScrollbarStyle == null)
+            {
+                verticalScrollbarStyle = new GUIStyle(GUI.skin.verticalScrollbar);
+                verticalScrollbarStyle.fixedWidth = 12;
+                verticalScrollbarStyle.normal.background = GUIHelper.MakeTex(2, 2, new Color(0.1f, 0.1f, 0.1f));
+            }
+
+            if (verticalScrollbarThumbStyle == null)
+            {
+                verticalScrollbarThumbStyle = new GUIStyle(GUI.skin.verticalScrollbarThumb);
+                verticalScrollbarThumbStyle.fixedWidth = 12;
+                verticalScrollbarThumbStyle.normal.background = GUIHelper.MakeTex(2, 2, new Color(0.3f, 0.3f, 0.3f));
+            }
+
+            if (headerStyle == null)
+            {
+                headerStyle = new GUIStyle(labelStyle);
+                headerStyle.fontSize = 16;
+                headerStyle.fontStyle = FontStyle.Bold;
+                headerStyle.alignment = TextAnchor.MiddleCenter;
+            }
+
+            if (sectionStyle == null)
+            {
+                sectionStyle = new GUIStyle(GUI.skin.box);
+                sectionStyle.padding = new RectOffset(10, 10, 10, 10);
+                sectionStyle.margin = new RectOffset(0, 0, 5, 5);
+            }
+
+            if (sliderLabelStyle == null)
+            {
+                sliderLabelStyle = new GUIStyle(labelStyle);
+                sliderLabelStyle.fontSize = 12;
+                sliderLabelStyle.alignment = TextAnchor.MiddleLeft;
+            }
+
+            GUI.skin.verticalScrollbar = verticalScrollbarStyle;
+            GUI.skin.verticalScrollbarThumb = verticalScrollbarThumbStyle;
+        }
+        private void DrawMainWindow()
+        {
+            float designWidth = 1920f;
+            float designHeight = 1080f;
+            float scaleX = Screen.width / designWidth;
+            float scaleY = Screen.height / designHeight;
+            GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scaleX, scaleY, 1));
+
+            windowRect = GUI.Window(0, windowRect, DrawWindow, "Player Follower", windowStyle);
+        }
+        private void DrawColorPicker()
+        {
             if (showColorPicker)
             {
                 Rect colorPickerRect = new Rect(
@@ -119,20 +312,37 @@ namespace WalkSimulator.Bot
                     COLOR_PICKER_SIZE,
                     COLOR_PICKER_SIZE
                 );
-                GUILayout.Window(1, colorPickerRect, DrawColorPicker, "Color Picker");
-            }
-
-            if (showPresetManager)
-            {
-                presetWindowRect = GUILayout.Window(2, presetWindowRect, DrawPresetManagerWindow, "Preset Manager", GUI.skin.window);
+                GUI.Window(1, colorPickerRect, DrawColorPicker, "Color Picker", windowStyle);
             }
         }
+        private void DrawPresetManager()
+        {
+            if (showPresetManager)
+            {
+                presetWindowRect = GUI.Window(2, presetWindowRect, DrawPresetManagerWindow, "Preset Manager", windowStyle);
+            }
+        }
+        #endregion
+        #region Window Drawing
         private void DrawWindow(int windowID)
         {
             GUILayout.BeginVertical();
-            selectedTab = GUILayout.Toolbar(selectedTab, tabNames);
-            scrollPosition = GUILayout.BeginScrollView(scrollPosition);
+            GUILayout.BeginHorizontal();
+            for (int i = 0; i < tabNames.Length; i++)
+            {
+                bool isSelected = (selectedTab == i);
+                Color origColor = GUI.backgroundColor;
+                if (isSelected) GUI.backgroundColor = buttonColor;
+                if (GUI.Button(new Rect(10 + i * ((WINDOW_WIDTH - 20) / tabNames.Length), 45, (WINDOW_WIDTH - 20) / tabNames.Length, 30), tabNames[i], buttonStyle))
+                {
+                    selectedTab = i;
+                }
+                GUI.backgroundColor = origColor;
+            }
+            GUILayout.EndHorizontal();
+            GUILayout.Space(40);
 
+            scrollPosition = GUILayout.BeginScrollView(scrollPosition);
             switch (selectedTab)
             {
                 case 0: DrawLineSettings(); break;
@@ -141,8 +351,16 @@ namespace WalkSimulator.Bot
                 case 3: DrawMisc(); break;
                 case 4: DrawLogsTab(); break;
             }
-
             GUILayout.EndScrollView();
+
+            GUILayout.BeginHorizontal();
+            if (GUI.Button(new Rect(10, WINDOW_HEIGHT - 27, WINDOW_WIDTH - 20, 30), $"Theme: {currentTheme}", buttonStyle))
+            {
+                currentTheme = (Theme)(((int)currentTheme + 1) % Enum.GetValues(typeof(Theme)).Length);
+                ApplyTheme();
+            }
+            GUILayout.EndHorizontal();
+
             GUILayout.EndVertical();
             GUI.DragWindow();
         }
@@ -151,7 +369,6 @@ namespace WalkSimulator.Bot
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Line Settings", headerStyle);
 
-            // Path Line Settings
             GUILayout.BeginVertical(GUI.skin.box);
             follower.showPath = GUILayout.Toggle(follower.showPath, "Show Path Line");
             if (follower.showPath)
@@ -169,7 +386,6 @@ namespace WalkSimulator.Bot
             }
             GUILayout.EndVertical();
 
-            // Direction Line Settings
             GUILayout.BeginVertical(GUI.skin.box);
             follower.showDirection = GUILayout.Toggle(follower.showDirection, "Show Direction Line");
             if (follower.showDirection)
@@ -187,7 +403,6 @@ namespace WalkSimulator.Bot
             }
             GUILayout.EndVertical();
 
-            // Global Line Settings
             GUILayout.Label($"Line Transparency: {follower.lineAlpha:F2}", sliderLabelStyle);
             follower.lineAlpha = GUILayout.HorizontalSlider(follower.lineAlpha, 0f, 1f);
             follower.lineRenderers.lineAlpha = follower.lineAlpha;
@@ -507,16 +722,22 @@ namespace WalkSimulator.Bot
         #endregion
         private void DrawMisc()
         {
-            #region Misc
+            #region Object Management
             GUILayout.BeginVertical(sectionStyle);
-            GUILayout.Label("Misc", headerStyle);
+            GUILayout.Label("Object Management", headerStyle);
+
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label("Object Scanning", headerStyle);
+            
             if (GUILayout.Button("Refresh Objects"))
             {
                 follower.ScanActiveObjects();
             }
+
+            GUILayout.BeginHorizontal();
             if (!follower.avoidObjects)
             {
-                if (GUILayout.Button("Start Avoid Objects"))
+                if (GUILayout.Button("Start Object Avoidance"))
                 {
                     follower.ScanActiveObjects();
                     follower.avoidObjects = true;
@@ -524,94 +745,80 @@ namespace WalkSimulator.Bot
             }
             else
             {
-                if (GUILayout.Button("Stop Avoid Objects"))
+                if (GUILayout.Button("Stop Object Avoidance"))
                 {
                     follower.avoidObjects = false;
                 }
             }
+            GUILayout.EndHorizontal();
 
-            if (GUILayout.Button("Send Logs"))
-            {
-                string logs = Logging.GetFullLogText();
-                //if (!string.IsNullOrEmpty(logs))
-                {
-                    GameObject senderObj = new GameObject("WebhookSender");
-                    WebhookSender sender = senderObj.AddComponent<WebhookSender>();
-                    sender.Initialize(follower.DiscordWebhookUrl.Value, logs);
-                }
-            }
-
-            if (GUILayout.Button("GrabAllIDS"))
-            {
-                GrabAllIDS();
-            }
+            GUILayout.Label($"Active Objects: {follower.activeObjects.Count}");
+            GUILayout.Label($"Blacklisted Objects: {follower.blacklistedObjects.Count}");
+            GUILayout.EndVertical();
             GUILayout.EndVertical();
             #endregion
-            #region Collisions
+
+            #region Collision Detection
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Collision Detection", headerStyle);
 
             GUILayout.BeginVertical(GUI.skin.box);
-
             string statusText = "System Status: ";
-            if (follower.objectsInitialized) { statusText += "Initialized"; }
-            else { statusText += "Not Fully Initialized"; }
+            statusText += follower.objectsInitialized ? "Initialized" : "Not Initialized";
             GUILayout.Label(statusText);
-
-            GUILayout.BeginHorizontal();
-            GUILayout.Label($"Tracking {follower.activeObjects.Count} objects", GUILayout.Width(200));
-
-            GUILayout.EndHorizontal();
 
             if (!follower.objectsInitialized)
             {
                 GUILayout.BeginVertical(GUI.skin.box);
                 GUILayout.Label("Missing Components:");
-                if (Rig.Instance == null) GUILayout.Label("Rig Instance");
-                if (Rig.Instance != null && Rig.Instance.leftHand.gameObject == null) GUILayout.Label("Left Hand");
-                if (Rig.Instance != null && Rig.Instance.rightHand.gameObject == null) GUILayout.Label("Right Hand");
+                if (Rig.Instance == null) GUILayout.Label("• Rig Instance");
+                if (Rig.Instance != null && Rig.Instance.leftHand.gameObject == null) GUILayout.Label("• Left Hand");
+                if (Rig.Instance != null && Rig.Instance.rightHand.gameObject == null) GUILayout.Label("• Right Hand");
                 GUILayout.EndVertical();
             }
-            GUILayout.EndVertical();
 
-            GUILayout.BeginVertical(GUI.skin.box);
-            GUILayout.Label("Current Collision Status:");
-
+            GUILayout.Space(5);
+            GUILayout.Label("Current Collisions:");
             if (follower.collisionState == "No Collisions")
             {
-                GUILayout.Label("No Collisions Detected", GUILayout.Height(25));
+                GUILayout.Label("• No Collisions Detected");
             }
             else if (follower.collisionState == "Objects not initialized")
             {
-                GUILayout.Label("System Not Initialized", GUILayout.Height(25));
+                GUILayout.Label("• System Not Initialized");
             }
             else
             {
                 string[] collisions = follower.collisionState.Split(',');
-                GUILayout.Label("Collisions Detected:");
-
-                GUILayout.BeginVertical(GUI.skin.box);
                 foreach (string collision in collisions)
                 {
-                    GUILayout.Label("* " + collision.Trim());
+                    GUILayout.Label($"• {collision.Trim()}");
                 }
-                GUILayout.EndVertical();
             }
-            GUILayout.EndVertical();
 
+            GUILayout.Space(5);
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("Initialize System", GUILayout.Height(30))) { follower.InitializeObjects(); }
-            if (GUILayout.Button("Force Collision Check", GUILayout.Height(30))) { follower.CheckCollisions(); }
+            if (GUILayout.Button("Initialize System", GUILayout.Height(30))) 
+            { 
+                follower.InitializeObjects(); 
+            }
+            if (GUILayout.Button("Force Collision Check", GUILayout.Height(30))) 
+            { 
+                follower.CheckCollisions(); 
+            }
             GUILayout.EndHorizontal();
-
+            GUILayout.EndVertical();
             GUILayout.EndVertical();
             #endregion
+
             #region Movement Recorder
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Movement Recorder", headerStyle);
 
+            GUILayout.BeginVertical(GUI.skin.box);
             if (!follower.movementRecorder.isRecording && !follower.movementRecorder.isReplaying)
             {
+                GUILayout.BeginHorizontal();
                 if (GUILayout.Button("Start Recording"))
                 {
                     follower.movementRecorder.StartRecording();
@@ -620,6 +827,7 @@ namespace WalkSimulator.Bot
                 {
                     follower.movementRecorder.StartReplay();
                 }
+                GUILayout.EndHorizontal();
             }
             else if (follower.movementRecorder.isRecording)
             {
@@ -637,17 +845,75 @@ namespace WalkSimulator.Bot
                     follower.movementRecorder.StopReplay();
                 }
             }
+
+            GUILayout.Space(5);
             if (GUILayout.Button("Open Preset Manager"))
             {
                 showPresetManager = true;
             }
             GUILayout.EndVertical();
+            GUILayout.EndVertical();
             #endregion
+
+            #region Gun
+            GUILayout.BeginVertical(sectionStyle);
+            GUILayout.Label("Gun Settings", headerStyle);
+
+            GUILayout.BeginVertical(GUI.skin.box);
+            follower.gunEnabled = GUILayout.Toggle(follower.gunEnabled, "Enable Gun");
+
+            if (follower.gunEnabled)
+            {
+                GUILayout.Label($"Gun Range: {follower.gunRange:F1}");
+                follower.gunRange = GUILayout.HorizontalSlider(follower.gunRange, 10f, 200f);
+
+                GUILayout.Space(5);
+                GUILayout.Label("Shoot with:");
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Mouse Click") || UnityEngine.InputSystem.Mouse.current.leftButton.wasPressedThisFrame)
+                {
+                    follower.ShootGun();
+                }
+                GUILayout.EndHorizontal();
+            }
+            GUILayout.EndVertical();
+            GUILayout.EndVertical();
+            #endregion
+
+            // todo: use the box to blacklist areas for the bot cant go
+            #region Box Mode
+            GUILayout.BeginVertical(sectionStyle);
+            GUILayout.Label("Box Mode", headerStyle);
+
+            GUILayout.BeginVertical(GUI.skin.box);
+            follower.boxShootingMode = GUILayout.Toggle(follower.boxShootingMode, "Enable Box Mode");
+            if (follower.boxShootingMode)
+            {
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Set Point 1"))
+                {
+                    follower.SetBoxPoint1();
+                }
+                if (GUILayout.Button("Set Point 2"))
+                {
+                    follower.SetBoxPoint2();
+                }
+                GUILayout.EndHorizontal();
+
+                GUILayout.Space(5);
+                GUILayout.Label($"Box Display Duration: {follower.boxDisplayDuration:F1}s");
+                follower.boxDisplayDuration = GUILayout.HorizontalSlider(follower.boxDisplayDuration, 0.5f, 30f);
+            }
+            GUILayout.EndVertical();
+            GUILayout.EndVertical();
+            #endregion
+
             #region Flee
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Flee Settings", headerStyle);
 
-            GUILayout.Label($"Flee Radius : {follower.FLEE_RADIUS:F1}");
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label($"Flee Radius: {follower.FLEE_RADIUS:F1}");
             follower.FLEE_RADIUS = GUILayout.HorizontalSlider(follower.FLEE_RADIUS, 0.1f, 30f);
 
             bool newFleeEnabled = GUILayout.Toggle(follower.fleeEnabled, "Flee from Taggers");
@@ -667,68 +933,14 @@ namespace WalkSimulator.Bot
                 }
             }
             GUILayout.EndVertical();
-            #endregion
-            #region Hand
-            GUILayout.BeginVertical(sectionStyle);
-            GUILayout.Label("Hand Settings", headerStyle);
-
-            GUILayout.Label("Activation Point:");
-            GUILayout.BeginHorizontal();
-            foreach (ActivationPoint point in Enum.GetValues(typeof(ActivationPoint)))
-            {
-                if (GUILayout.Toggle(follower.activationPoint == point, point.ToString()))
-                {
-                    follower.activationPoint = point;
-                }
-            }
-            GUILayout.EndHorizontal();
-
-            GUILayout.Label($"Hand Down Duration: {follower.handDownDuration:F1}s");
-            follower.handDownDuration = GUILayout.HorizontalSlider(follower.handDownDuration, 0.1f, 2f);
-
-            GUILayout.Label($"Button Hold Duration: {follower.buttonHoldDuration:F1}s");
-            follower.buttonHoldDuration = GUILayout.HorizontalSlider(follower.buttonHoldDuration, 0.1f, 3f);
-
-            GUILayout.Label($"Hand Up Duration: {follower.handUpDuration:F1}s");
-            follower.handUpDuration = GUILayout.HorizontalSlider(follower.handUpDuration, 0.1f, 2f);
-
-            GUILayout.Label("Activation Button(s):");
-            GUILayout.BeginHorizontal();
-            foreach (HandButton button in Enum.GetValues(typeof(HandButton)))
-            {
-                bool active = (follower.selectedHandButton & button) != 0;
-                bool newActive = GUILayout.Toggle(active, button.ToString());
-                if (newActive != active)
-                {
-                    if (newActive) { follower.selectedHandButton |= button; }
-                    else { follower.selectedHandButton &= ~button; }
-                }
-            }
-            GUILayout.EndHorizontal();
-
-            GUILayout.Label("Select Hand:");
-            GUILayout.BeginHorizontal();
-            if (GUILayout.Toggle(isLeftHanded, "Left-Handed"))
-            {
-                isLeftHanded = true;
-            }
-            if (GUILayout.Toggle(!isLeftHanded, "Right-Handed"))
-            {
-                isLeftHanded = false;
-            }
-            GUILayout.EndHorizontal();
-
-            if (GUILayout.Button("Perform Hand"))
-            {
-                follower.PerformHand(isLeftHanded);
-            }
-
             GUILayout.EndVertical();
             #endregion
+
             #region Tag
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Tag Settings", headerStyle);
 
+            GUILayout.BeginVertical(GUI.skin.box);
             if (!follower.isTagging)
             {
                 if (GUILayout.Button("Start Tag"))
@@ -744,6 +956,28 @@ namespace WalkSimulator.Bot
                     follower.StopTagging();
                 }
             }
+            GUILayout.EndVertical();
+            GUILayout.EndVertical();
+            #endregion
+
+            #region Debug Tools
+            GUILayout.BeginVertical(sectionStyle);
+            GUILayout.Label("Debug Tools", headerStyle);
+
+            GUILayout.BeginVertical(GUI.skin.box);
+            if (GUILayout.Button("Send Logs"))
+            {
+                string logs = Logging.GetFullLogText();
+                GameObject senderObj = new GameObject("WebhookSender");
+                WebhookSender sender = senderObj.AddComponent<WebhookSender>();
+                sender.Initialize(follower.DiscordWebhookUrl.Value, logs);
+            }
+
+            if (GUILayout.Button("Grab All Player IDs"))
+            {
+                GrabAllIDS();
+            }
+            GUILayout.EndVertical();
             GUILayout.EndVertical();
             #endregion
         }
@@ -822,5 +1056,6 @@ namespace WalkSimulator.Bot
             GUILayout.EndVertical();
             GUI.DragWindow();
         }
+        #endregion
     }
 }
