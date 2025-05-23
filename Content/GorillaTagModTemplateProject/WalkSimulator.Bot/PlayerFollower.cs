@@ -210,24 +210,56 @@ namespace WalkSimulator.Bot
             var (targetTransform, localBody) = playerFollower.GetPlayerTransforms(playerFollower.currentPlayer);
             if (targetTransform == null || localBody == null) return;
 
-            playerFollower.lineRenderers.UpdateLineRenderers(localBody, targetTransform);
-            Vector3 directionToTarget = targetTransform.position - localBody.position;
+            Vector3 interceptionPoint;
+
+            if (playerFollower.isPredictionEnabled)
+            {
+                playerFollower.movementPredictor.UpdatePlayerMovement(playerFollower.currentPlayer, targetTransform.position);
+
+                Vector3 smoothedVelocity = playerFollower.movementPredictor.GetSmoothedVelocity(playerFollower.currentPlayer);
+                Vector3 localVelocity = playerFollower.GetLocalPlayerVelocity();
+                float localSpeed = localVelocity.magnitude;
+
+                interceptionPoint = playerFollower.movementPredictor.GetPredictedInterceptionPoint(
+                    playerFollower.currentPlayer,
+                    localBody.position,
+                    localSpeed > 0 ? localSpeed : 3f
+                );
+
+                if (playerFollower.movementPredictor.IsPlayerLikelyToJump(playerFollower.currentPlayer))
+                {
+                    interceptionPoint = playerFollower.movementPredictor.PredictPlayerPosition(playerFollower.currentPlayer, 1.2f);
+                }
+            }
+            else
+            {
+                interceptionPoint = targetTransform.position;
+            }
+
+            GameObject tempTarget = new GameObject("TempPredictedTarget");
+            tempTarget.transform.position = interceptionPoint;
+
+            playerFollower.lineRenderers.UpdateLineRenderers(localBody, tempTarget.transform);
+            Vector3 directionToTarget = interceptionPoint - localBody.position;
             directionToTarget.y = 0f;
             float distanceToTarget = directionToTarget.magnitude;
 
-            Vector3 finalDirection = playerFollower.avoidObjects ? 
-                playerFollower.AvoidObstacles(localBody.position, directionToTarget.normalized) : 
+            Vector3 finalDirection = playerFollower.avoidObjects ?
+                playerFollower.AvoidObstacles(localBody.position, directionToTarget.normalized) :
                 directionToTarget.normalized;
 
             if (distanceToTarget < PlayerFollower.TARGET_PROXIMITY_THRESHOLD)
             {
                 playerFollower.movementStateMachine.StopMoving();
+                UnityEngine.Object.Destroy(tempTarget);
                 return;
             }
 
             Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * finalDirection;
             playerFollower.movementStateMachine.UpdateMovement(localDirection);
-            playerFollower.TurnTowardsTarget(targetTransform, localBody);
+            playerFollower.TurnTowardsTargetPosition(localBody, interceptionPoint);
+
+            UnityEngine.Object.Destroy(tempTarget);
         }
     }
     public class TaggingStateMachine
@@ -274,24 +306,56 @@ namespace WalkSimulator.Bot
             var (targetTransform, localBody) = playerFollower.GetPlayerTransforms(playerFollower.taggedPlayer);
             if (targetTransform == null || localBody == null) return;
 
-            playerFollower.lineRenderers.UpdateLineRenderers(localBody, targetTransform);
-            Vector3 directionToTarget = targetTransform.position - localBody.position;
+            Vector3 interceptionPoint;
+
+            if (playerFollower.isPredictionEnabled)
+            {
+                playerFollower.movementPredictor.UpdatePlayerMovement(playerFollower.taggedPlayer, targetTransform.position);
+
+                Vector3 localVelocity = playerFollower.GetLocalPlayerVelocity();
+                float localSpeed = localVelocity.magnitude;
+
+                interceptionPoint = playerFollower.movementPredictor.GetPredictedInterceptionPoint(
+                    playerFollower.taggedPlayer,
+                    localBody.position,
+                    localSpeed > 0 ? localSpeed * 1.2f : 4f
+                );
+
+                if (playerFollower.movementPredictor.IsPlayerLikelyToJump(playerFollower.taggedPlayer))
+                {
+                    interceptionPoint = playerFollower.movementPredictor.PredictPlayerPosition(playerFollower.taggedPlayer, 1.5f);
+                }
+            }
+            else
+            {
+                // Fallback: move directly towards the current target position
+                interceptionPoint = targetTransform.position;
+            }
+
+            GameObject tempTarget = new GameObject("TempTagTarget");
+            tempTarget.transform.position = interceptionPoint;
+
+            playerFollower.lineRenderers.UpdateLineRenderers(localBody, tempTarget.transform);
+            Vector3 directionToTarget = interceptionPoint - localBody.position;
             directionToTarget.y = 0f;
             float distanceToTarget = directionToTarget.magnitude;
 
-            Vector3 finalDirection = playerFollower.avoidObjects ? 
-                playerFollower.AvoidObstacles(localBody.position, directionToTarget.normalized) : 
+            Vector3 finalDirection = playerFollower.avoidObjects ?
+                playerFollower.AvoidObstacles(localBody.position, directionToTarget.normalized) :
                 directionToTarget.normalized;
 
             if (distanceToTarget < PlayerFollower.TARGET_PROXIMITY_THRESHOLD)
             {
                 playerFollower.movementStateMachine.StopMoving();
+                UnityEngine.Object.Destroy(tempTarget);
                 return;
             }
 
             Vector3 localDirection = Quaternion.Inverse(localBody.rotation) * finalDirection;
             playerFollower.movementStateMachine.UpdateMovement(localDirection);
-            playerFollower.TurnTowardsTarget(targetTransform, localBody);
+            playerFollower.TurnTowardsTargetPosition(localBody, interceptionPoint);
+
+            UnityEngine.Object.Destroy(tempTarget);
         }
     }
     public class FleeStateMachine
@@ -385,6 +449,7 @@ namespace WalkSimulator.Bot
         private FollowingStateMachine followingStateMachine;
         private TaggingStateMachine taggingStateMachine;
         private FleeStateMachine fleeStateMachine;
+        public PlayerMovementPredictor movementPredictor;
 
         // Movement Constants
         public const float TARGET_PROXIMITY_THRESHOLD = 0.5f;
@@ -482,9 +547,21 @@ namespace WalkSimulator.Bot
         private const int BOX_EDGES = 12;
         public float boxDisplayDuration = 60f;
 
+        // Prediction
+        private float lastCleanupTime = 0f;
+        private const float CLEANUP_INTERVAL = 5f;
+        public bool isPredictionEnabled = false;
         #endregion
 
         #region Init
+        public Vector3 GetLocalPlayerVelocity()
+        {
+            if (GorillaLocomotion.GTPlayer.Instance != null)
+            {
+                return GorillaLocomotion.GTPlayer.Instance.RigidbodyVelocity;
+            }
+            return Vector3.zero;
+        }
         private void Awake()
         {
             Initialize();
@@ -573,12 +650,19 @@ namespace WalkSimulator.Bot
             followingStateMachine = new FollowingStateMachine(this);
             taggingStateMachine = new TaggingStateMachine(this);
             fleeStateMachine = new FleeStateMachine(this);
+            movementPredictor = new PlayerMovementPredictor(this);
 
             // Initialize Presets
             InitializeHardcodedPresets();
         }
         private void Update()
         {
+            if (Time.time - lastCleanupTime > CLEANUP_INTERVAL)
+            {
+                movementPredictor.CleanupDisconnectedPlayers();
+                lastCleanupTime = Time.time;
+            }
+
             // Update Movement Recorder
             movementRecorder.FixedUpdate();
 

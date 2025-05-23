@@ -977,6 +977,11 @@ namespace WalkSimulator.Bot
             {
                 GrabAllIDS();
             }
+
+            GUILayout.Space(10);
+            GUILayout.Label("Movement Prediction", headerStyle);
+            follower.isPredictionEnabled = GUILayout.Toggle(follower.isPredictionEnabled, "Enable Prediction");
+
             GUILayout.EndVertical();
             GUILayout.EndVertical();
             #endregion

@@ -51,7 +51,6 @@ namespace WalkSimulator.Bot
             {
                 if (arcPoints == null || arcPoints.Count < 2) return;
 
-                // Create or get jump arc line renderer
                 LineRenderer arcRenderer = GetOrCreateLineRenderer("JumpArcLine");
                 arcRenderer.startWidth = width;
                 arcRenderer.endWidth = width;
@@ -61,7 +60,6 @@ namespace WalkSimulator.Bot
                 arcRenderer.SetPositions(arcPoints.ToArray());
                 arcRenderer.enabled = true;
 
-                // Start coroutine to fade out the arc
                 StartCoroutine(FadeOutJumpArc(arcRenderer));
             }
 
@@ -84,7 +82,30 @@ namespace WalkSimulator.Bot
 
                 arcRenderer.enabled = false;
             }
+            public void UpdateLineRenderersToPosition(Transform fromTransform, Vector3 toPosition)
+            {
+                if (fromTransform == null) return;
 
+                Vector3 startPosition = fromTransform.position;
+                Vector3 endPosition = toPosition;
+
+                if (pathLine.Renderer != null)
+                {
+                    pathLine.Renderer.SetPosition(0, startPosition);
+                    pathLine.Renderer.SetPosition(1, endPosition);
+                    pathLine.Renderer.enabled = true;
+                }
+
+                if (directionLine.Renderer != null)
+                {
+                    Vector3 direction = (endPosition - startPosition).normalized;
+                    Vector3 directionEnd = startPosition + direction * 2f;
+
+                    directionLine.Renderer.SetPosition(0, startPosition);
+                    directionLine.Renderer.SetPosition(1, directionEnd);
+                    directionLine.Renderer.enabled = true;
+                }
+            }
             private LineRenderer GetOrCreateLineRenderer(string name)
             {
                 Transform existingRenderer = transform.Find(name);
