@@ -82,7 +82,6 @@ namespace WalkSimulator.Bot
 
                 arcRenderer.enabled = false;
             }
-<<<<<<< HEAD
             public void UpdateLineRenderersToPosition(Transform fromTransform, Vector3 toPosition)
             {
                 if (fromTransform == null) return;
@@ -106,31 +105,6 @@ namespace WalkSimulator.Bot
                     directionLine.Renderer.SetPosition(1, directionEnd);
                     directionLine.Renderer.enabled = true;
                 }
-=======
-            public void UpdateLineRenderersToPosition(Transform fromTransform, Vector3 toPosition)
-            {
-                if (fromTransform == null) return;
-
-                Vector3 startPosition = fromTransform.position;
-                Vector3 endPosition = toPosition;
-
-                if (pathLine.Renderer != null)
-                {
-                    pathLine.Renderer.SetPosition(0, startPosition);
-                    pathLine.Renderer.SetPosition(1, endPosition);
-                    pathLine.Renderer.enabled = true;
-                }
-
-                if (directionLine.Renderer != null)
-                {
-                    Vector3 direction = (endPosition - startPosition).normalized;
-                    Vector3 directionEnd = startPosition + direction * 2f;
-
-                    directionLine.Renderer.SetPosition(0, startPosition);
-                    directionLine.Renderer.SetPosition(1, directionEnd);
-                    directionLine.Renderer.enabled = true;
-                }
->>>>>>> 31ec9aed7aef5857e654107e2b42ea026d51c0de
             }
             private LineRenderer GetOrCreateLineRenderer(string name)
             {

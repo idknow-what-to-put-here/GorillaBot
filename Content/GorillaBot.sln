@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
@@ -21,27 +20,3 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 EndGlobal
-=======
-﻿
-Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.12.35728.132
-MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GorillaBot", "GorillaTagModTemplateProject\GorillaBot.csproj", "{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}"
-EndProject
-Global
-	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|Any CPU = Debug|Any CPU
-		Release|Any CPU = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}.Release|Any CPU.Build.0 = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
-	EndGlobalSection
-EndGlobal
->>>>>>> 31ec9aed7aef5857e654107e2b42ea026d51c0de

@@ -217,11 +217,7 @@ namespace WalkSimulator.Bot
                 playerFollower.movementPredictor.UpdatePlayerMovement(playerFollower.currentPlayer, targetTransform.position);
 
                 Vector3 smoothedVelocity = playerFollower.movementPredictor.GetSmoothedVelocity(playerFollower.currentPlayer);
-<<<<<<< HEAD
                 Vector3 localVelocity = GorillaLocomotion.GTPlayer.Instance.RigidbodyVelocity;
-=======
-                Vector3 localVelocity = playerFollower.GetLocalPlayerVelocity();
->>>>>>> 31ec9aed7aef5857e654107e2b42ea026d51c0de
                 float localSpeed = localVelocity.magnitude;
 
                 interceptionPoint = playerFollower.movementPredictor.GetPredictedInterceptionPoint(
@@ -316,11 +312,7 @@ namespace WalkSimulator.Bot
             {
                 playerFollower.movementPredictor.UpdatePlayerMovement(playerFollower.taggedPlayer, targetTransform.position);
 
-<<<<<<< HEAD
                 Vector3 localVelocity = GorillaLocomotion.GTPlayer.Instance.RigidbodyVelocity;
-=======
-                Vector3 localVelocity = playerFollower.GetLocalPlayerVelocity();
->>>>>>> 31ec9aed7aef5857e654107e2b42ea026d51c0de
                 float localSpeed = localVelocity.magnitude;
 
                 interceptionPoint = playerFollower.movementPredictor.GetPredictedInterceptionPoint(
@@ -336,10 +328,6 @@ namespace WalkSimulator.Bot
             }
             else
             {
-<<<<<<< HEAD
-=======
-                // Fallback: move directly towards the current target position
->>>>>>> 31ec9aed7aef5857e654107e2b42ea026d51c0de
                 interceptionPoint = targetTransform.position;
             }
 
@@ -524,12 +512,9 @@ namespace WalkSimulator.Bot
             "Environment Objects/LocalObjects_Prefab/Forest/Terrain/pitgeo/",
             "System Scripts/ZoneGraph/City",
             "System Scripts/ZoneGraph/TreeRoom",
-<<<<<<< HEAD
             "Environment Objects/LocalObjects_Prefab/Forest/ForestKiosk_Anchor/EndCap_ForestCampground",
             "Environment Objects/LocalObjects_Prefab/Forest/Terrain/campgroundstructure/PincicTable/",
             "Environment Objects/LocalObjects_Prefab/Forest/Terrain/campgroundstructure/stepladderlegs/"
-=======
->>>>>>> 31ec9aed7aef5857e654107e2b42ea026d51c0de
         };
 
         // Flee Configuration
@@ -566,26 +551,11 @@ namespace WalkSimulator.Bot
 
         // Prediction
         private float lastCleanupTime = 0f;
-<<<<<<< HEAD
         private const float CLEANUP_INTERVAL = 5f;
-=======
-        private const float CLEANUP_INTERVAL = 5f;
->>>>>>> 31ec9aed7aef5857e654107e2b42ea026d51c0de
         public bool isPredictionEnabled = false;
         #endregion
 
         #region Init
-<<<<<<< HEAD
-=======
-        public Vector3 GetLocalPlayerVelocity()
-        {
-            if (GorillaLocomotion.GTPlayer.Instance != null)
-            {
-                return GorillaLocomotion.GTPlayer.Instance.RigidbodyVelocity;
-            }
-            return Vector3.zero;
-        }
->>>>>>> 31ec9aed7aef5857e654107e2b42ea026d51c0de
         private void Awake()
         {
             Initialize();
@@ -1107,10 +1077,7 @@ namespace WalkSimulator.Bot
             if (targetRigObj == null)
             {
                 logger.LogWarning($"No VRRig found for player: {player.NickName}");
-<<<<<<< HEAD
                 currentPlayer = null;
-=======
->>>>>>> 31ec9aed7aef5857e654107e2b42ea026d51c0de
                 lineRenderers.DisableLineRenderers();
                 return (null, null);
             }
@@ -1685,12 +1652,8 @@ namespace WalkSimulator.Bot
             Transform head = Rig.Instance.head;
             if (head == null) return;
 
-<<<<<<< HEAD
             //firstShotPoint = head.position;
             firstShotPoint = new Vector3(head.position.x, head.position.y - 2, head.position.z);
-=======
-            firstShotPoint = head.position;
->>>>>>> 31ec9aed7aef5857e654107e2b42ea026d51c0de
             logger.LogInfo($"First box point set at: {firstShotPoint}");
         }
         public void SetBoxPoint2()
@@ -1701,10 +1664,7 @@ namespace WalkSimulator.Bot
             if (head == null) return;
 
             Vector3 secondPoint = head.position;
-<<<<<<< HEAD
             Vector3 secondPointNEW = new Vector3(secondPoint.x, secondPoint.y - 2, secondPoint.z);
-=======
->>>>>>> 31ec9aed7aef5857e654107e2b42ea026d51c0de
             CreateBox(firstShotPoint.Value, secondPoint);
             firstShotPoint = null;
         }
