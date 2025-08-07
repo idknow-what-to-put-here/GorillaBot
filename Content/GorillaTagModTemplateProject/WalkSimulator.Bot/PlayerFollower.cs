@@ -496,7 +496,7 @@ namespace WalkSimulator.Bot
         public float handUpDuration = 0.5f;
         public float handGroundDistance = 0.5f;
 
-        // Object Scanning
+        // Object ScanningEnvironment Objects/LocalObjects_Prefab/Forest/Terrain/SoundPostForest/
         public bool avoidObjects = false;
         public List<GameObject> activeObjects = new List<GameObject>();
         public HashSet<GameObject> blacklistedObjects = new HashSet<GameObject>();
@@ -514,7 +514,8 @@ namespace WalkSimulator.Bot
             "System Scripts/ZoneGraph/TreeRoom",
             "Environment Objects/LocalObjects_Prefab/Forest/ForestKiosk_Anchor/EndCap_ForestCampground",
             "Environment Objects/LocalObjects_Prefab/Forest/Terrain/campgroundstructure/PincicTable/",
-            "Environment Objects/LocalObjects_Prefab/Forest/Terrain/campgroundstructure/stepladderlegs/"
+            "Environment Objects/LocalObjects_Prefab/Forest/Terrain/campgroundstructure/stepladderlegs/",
+            "Environment Objects/LocalObjects_Prefab/Forest/Terrain/SoundPostForest/",
         };
 
         // Flee Configuration
@@ -527,7 +528,13 @@ namespace WalkSimulator.Bot
         private Dictionary<GameObject, bool> rightHandCollisions = new Dictionary<GameObject, bool>();
         public bool objectsInitialized = false;
         private readonly string[] blacklistTerms = { };
-        private readonly string[] blacklistPaths = { "Player Objects", "System Scripts/ZoneGraph/Tutorial", "System Scripts/ZoneGraph/Forest", "System Scripts/ZoneGraph/Clouds" };
+        private readonly string[] blacklistPaths = 
+        { 
+            "Player Objects", 
+            "System Scripts/ZoneGraph/Tutorial", 
+            "System Scripts/ZoneGraph/Forest", 
+            "System Scripts/ZoneGraph/Clouds" 
+        };
         private Dictionary<string, Transform> pathTransformCache = new Dictionary<string, Transform>();
 
         // Gun Configuration
@@ -579,12 +586,10 @@ namespace WalkSimulator.Bot
         }
         private void Initialize()
         {
-            // Initialize Components
             gui = new PlayerFollowerGUI(this);
             movementRecorder = new MovementRecorder(this);
             logger = BepInEx.Logging.Logger.CreateLogSource("WalkSimulator");
             
-            // Setup Logger
             logger.LogEvent += (logLevel, message) =>
             {
                 string logMessage = $"{message}";
@@ -596,13 +601,11 @@ namespace WalkSimulator.Bot
             };
             logger.LogInfo("PlayerFollower plugin loaded!");
 
-            // Initialize Line Renderers
             GameObject lrObj = new GameObject("LineRenderers");
             lineRenderers = lrObj.AddComponent<LineRenderers>();
             lineRenderers.Initialize("PathLine", "DirectionLine", pathColor, directionColor, lineAlpha, pathLineWidth, directionLineWidth);
             pathPositions = new List<Vector3>();
 
-            // Initialize Gun Ray Renderer
             GameObject gunRayObj = new GameObject("GunRayRenderer");
             gunRayRenderer = gunRayObj.AddComponent<LineRenderer>();
             gunRayRenderer.material = new Material(Shader.Find("Sprites/Default"));
@@ -613,7 +616,6 @@ namespace WalkSimulator.Bot
             gunRayRenderer.positionCount = 2;
             gunRayRenderer.enabled = false;
 
-            // Initialize Box Renderers
             GameObject boxRenderersObj = new GameObject("BoxRenderers");
             for (int i = 0; i < BOX_EDGES; i++)
             {
@@ -630,7 +632,6 @@ namespace WalkSimulator.Bot
                 boxRenderers.Add(edgeRenderer);
             }
 
-            // Create Preset Directory
             string presetDir = GetPresetDirectory();
             if (!Directory.Exists(presetDir))
             {
@@ -638,7 +639,6 @@ namespace WalkSimulator.Bot
                 logger.LogInfo($"Created preset directory: {presetDir}");
             }
 
-            // Initialize State Machines
             movementStateMachine = new MovementStateMachine(this);
             pathingStateMachine = new PathingStateMachine(this);
             followingStateMachine = new FollowingStateMachine(this);
@@ -646,7 +646,6 @@ namespace WalkSimulator.Bot
             fleeStateMachine = new FleeStateMachine(this);
             movementPredictor = new PlayerMovementPredictor(this);
 
-            // Initialize Presets
             InitializeHardcodedPresets();
         }
         private void Update()
@@ -657,16 +656,13 @@ namespace WalkSimulator.Bot
                 lastCleanupTime = Time.time;
             }
 
-            // Update Movement Recorder
             movementRecorder.FixedUpdate();
 
-            // Update Collisions
             if (Rig.Instance != null && Rig.Instance.active)
             {
                 CheckCollisions();
             }
 
-            // Update Gun Ray
             if (gunEnabled && gunRayRenderer != null)
             {
                 Transform head = Rig.Instance.head;
@@ -691,7 +687,6 @@ namespace WalkSimulator.Bot
                 gunRayRenderer.enabled = false;
             }
 
-            // Update Movement
             if (fleeEnabled)
             {
                 fleeStateMachine.FleeFromTaggers();
@@ -715,7 +710,6 @@ namespace WalkSimulator.Bot
                 lineRenderers.DisableLineRenderers();
             }
 
-            // Update Tagging
             if (isTagging)
             {
                 if (taggedPlayer != null)
@@ -733,7 +727,6 @@ namespace WalkSimulator.Bot
                 }
             }
 
-            // Update Scanning
             scanTimer += Time.deltaTime;
             if (scanTimer >= scanInterval)
             {

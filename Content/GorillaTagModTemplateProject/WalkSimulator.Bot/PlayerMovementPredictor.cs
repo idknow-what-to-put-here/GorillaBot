@@ -8,6 +8,7 @@ using System;
 
 namespace WalkSimulator.Bot
 {
+    // chatgpt real
     public class PlayerMovementPredictor
     {
         private Dictionary<Player, PlayerMovementData> playerMovementHistory = new Dictionary<Player, PlayerMovementData>();

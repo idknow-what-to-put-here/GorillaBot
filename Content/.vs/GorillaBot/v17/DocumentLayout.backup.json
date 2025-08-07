@@ -3,16 +3,20 @@
   "WorkspaceRootPath": "C:\\Users\\Administrator\\Documents\\Outher\\VS\\C#\\WalkSimulator\\WalkSimulator_ai - NEW\\Content\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}|GorillaTagModTemplateProject\\GorillaBot.csproj|c:\\users\\administrator\\documents\\outher\\vs\\c#\\walksimulator\\walksimulator_ai - new\\content\\gorillatagmodtemplateproject\\walksimulator.bot\\playermovementpredictor.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}|GorillaTagModTemplateProject\\GorillaBot.csproj|solutionrelative:gorillatagmodtemplateproject\\walksimulator.bot\\playermovementpredictor.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}|GorillaTagModTemplateProject\\GorillaBot.csproj|c:\\users\\administrator\\documents\\outher\\vs\\c#\\walksimulator\\walksimulator_ai - new\\content\\gorillatagmodtemplateproject\\walksimulator.bot\\movementrecorder.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}|GorillaTagModTemplateProject\\GorillaBot.csproj|solutionrelative:gorillatagmodtemplateproject\\walksimulator.bot\\movementrecorder.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}|GorillaTagModTemplateProject\\GorillaBot.csproj|c:\\users\\administrator\\documents\\outher\\vs\\c#\\walksimulator\\walksimulator_ai - new\\content\\gorillatagmodtemplateproject\\walksimulator.bot\\playerfollower.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}|GorillaTagModTemplateProject\\GorillaBot.csproj|solutionrelative:gorillatagmodtemplateproject\\walksimulator.bot\\playerfollower.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}|GorillaTagModTemplateProject\\GorillaBot.csproj|c:\\users\\administrator\\documents\\outher\\vs\\c#\\walksimulator\\walksimulator_ai - new\\content\\gorillatagmodtemplateproject\\walksimulator.bot\\playerfollowergui.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}|GorillaTagModTemplateProject\\GorillaBot.csproj|solutionrelative:gorillatagmodtemplateproject\\walksimulator.bot\\playerfollowergui.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}|GorillaTagModTemplateProject\\GorillaBot.csproj|c:\\users\\administrator\\documents\\outher\\vs\\c#\\walksimulator\\walksimulator_ai - new\\content\\gorillatagmodtemplateproject\\walksimulator.bot\\movementrecorder.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{3B587A4F-6910-4641-92C3-E4EC6D0ACF9E}|GorillaTagModTemplateProject\\GorillaBot.csproj|solutionrelative:gorillatagmodtemplateproject\\walksimulator.bot\\movementrecorder.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -22,32 +26,37 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 2,
+          "SelectedChildIndex": 0,
           "Children": [
-            {
-              "$type": "Bookmark",
-              "Name": "ST:129:0:{75188d03-9892-4ae2-abf1-207126247ce5}"
-            },
-            {
-              "$type": "Bookmark",
-              "Name": "ST:128:0:{75188d03-9892-4ae2-abf1-207126247ce5}"
-            },
             {
               "$type": "Document",
               "DocumentIndex": 0,
+              "Title": "PlayerMovementPredictor.cs",
+              "DocumentMoniker": "C:\\Users\\Administrator\\Documents\\Outher\\VS\\C#\\WalkSimulator\\WalkSimulator_ai - NEW\\Content\\GorillaTagModTemplateProject\\WalkSimulator.Bot\\PlayerMovementPredictor.cs",
+              "RelativeDocumentMoniker": "GorillaTagModTemplateProject\\WalkSimulator.Bot\\PlayerMovementPredictor.cs",
+              "ToolTip": "C:\\Users\\Administrator\\Documents\\Outher\\VS\\C#\\WalkSimulator\\WalkSimulator_ai - NEW\\Content\\GorillaTagModTemplateProject\\WalkSimulator.Bot\\PlayerMovementPredictor.cs",
+              "RelativeToolTip": "GorillaTagModTemplateProject\\WalkSimulator.Bot\\PlayerMovementPredictor.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAoAAAATAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2025-08-07T00:07:15.988Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
               "Title": "PlayerFollower.cs",
               "DocumentMoniker": "C:\\Users\\Administrator\\Documents\\Outher\\VS\\C#\\WalkSimulator\\WalkSimulator_ai - NEW\\Content\\GorillaTagModTemplateProject\\WalkSimulator.Bot\\PlayerFollower.cs",
               "RelativeDocumentMoniker": "GorillaTagModTemplateProject\\WalkSimulator.Bot\\PlayerFollower.cs",
               "ToolTip": "C:\\Users\\Administrator\\Documents\\Outher\\VS\\C#\\WalkSimulator\\WalkSimulator_ai - NEW\\Content\\GorillaTagModTemplateProject\\WalkSimulator.Bot\\PlayerFollower.cs",
               "RelativeToolTip": "GorillaTagModTemplateProject\\WalkSimulator.Bot\\PlayerFollower.cs",
-              "ViewState": "AgIAADwBAAAAAAAAAAAvwEUBAAAhAAAAAAAAAA==",
+              "ViewState": "AgIAAIgEAAAAAAAAAAAmwHcEAAAJAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2025-05-17T00:24:00.501Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 3,
               "Title": "PlayerFollowerGUI.cs",
               "DocumentMoniker": "C:\\Users\\Administrator\\Documents\\Outher\\VS\\C#\\WalkSimulator\\WalkSimulator_ai - NEW\\Content\\GorillaTagModTemplateProject\\WalkSimulator.Bot\\PlayerFollowerGUI.cs",
               "RelativeDocumentMoniker": "GorillaTagModTemplateProject\\WalkSimulator.Bot\\PlayerFollowerGUI.cs",
@@ -59,15 +68,16 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 1,
               "Title": "MovementRecorder.cs",
               "DocumentMoniker": "C:\\Users\\Administrator\\Documents\\Outher\\VS\\C#\\WalkSimulator\\WalkSimulator_ai - NEW\\Content\\GorillaTagModTemplateProject\\WalkSimulator.Bot\\MovementRecorder.cs",
               "RelativeDocumentMoniker": "GorillaTagModTemplateProject\\WalkSimulator.Bot\\MovementRecorder.cs",
               "ToolTip": "C:\\Users\\Administrator\\Documents\\Outher\\VS\\C#\\WalkSimulator\\WalkSimulator_ai - NEW\\Content\\GorillaTagModTemplateProject\\WalkSimulator.Bot\\MovementRecorder.cs",
               "RelativeToolTip": "GorillaTagModTemplateProject\\WalkSimulator.Bot\\MovementRecorder.cs",
-              "ViewState": "AgIAADcBAAAAAAAAAAAAADcBAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAABYAAAAAAAAAAAAgwA4AAAARAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2025-05-17T00:32:02.008Z"
+              "WhenOpened": "2025-05-17T00:32:02.008Z",
+              "EditorCaption": ""
             }
           ]
         }
