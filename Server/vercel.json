@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/tts.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/text-to-speech",
+      "methods": ["POST", "OPTIONS"],
+      "dest": "api/tts.py",
+      "headers": {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "86400"
+      }
+    }
+  ],
+  "env": {
+    "FLASK_ENV": "production",
+    "VOICERSS_API_KEY": "@voicerss_api_key"
+  }
+}

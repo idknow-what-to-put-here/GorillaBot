@@ -93,6 +93,11 @@ namespace WalkSimulator.Bot
             Secondary = 1 << 3  // 8
         }
         public enum ActivationPoint { OnReachGround, MidHold, OnRelease }
+
+        // TTS Fields
+        private string ttsInputText = "";
+        private bool isSpeaking = false;
+        private AudioClip currentTTSClip;
         #endregion
 
         public PlayerFollowerGUI(PlayerFollower follower)
@@ -960,6 +965,61 @@ namespace WalkSimulator.Bot
             GUILayout.EndVertical();
             #endregion
 
+            #region Text-to-Speech
+            GUILayout.BeginVertical(sectionStyle);
+            GUILayout.Label("Text-to-Speech", headerStyle);
+
+            GUILayout.BeginVertical(GUI.skin.box);
+            GUILayout.Label("Enter text to speak:");
+            ttsInputText = GUILayout.TextField(ttsInputText, GUILayout.Height(30));
+            
+            GUILayout.Space(5);
+            GUILayout.BeginHorizontal();
+            if (GUILayout.Button("Speak Text", GUILayout.Height(35)))
+            {
+                if (!string.IsNullOrWhiteSpace(ttsInputText))
+                {
+                    _ = SpeakTextAsync(ttsInputText);
+                }
+            }
+            
+            if (GUILayout.Button("Stop Speaking", GUILayout.Height(35)))
+            {
+                StopCurrentTTS();
+            }
+            GUILayout.EndHorizontal();
+
+            GUILayout.Space(10);
+            GUILayout.Label("Quick Phrases:", headerStyle);
+            
+            string[] quickPhrases = { "Hello everyone!", "Follow me!", "Good game!", "Let's go!", "Nice job!" };
+            for (int i = 0; i < quickPhrases.Length; i += 2)
+            {
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button(quickPhrases[i]))
+                {
+                    _ = SpeakTextAsync(quickPhrases[i]);
+                }
+                if (i + 1 < quickPhrases.Length && GUILayout.Button(quickPhrases[i + 1]))
+                {
+                    _ = SpeakTextAsync(quickPhrases[i + 1]);
+                }
+                GUILayout.EndHorizontal();
+            }
+
+            GUILayout.Space(5);
+            if (isSpeaking)
+            {
+                GUILayout.Label("🔊 Currently speaking...", labelStyle);
+            }
+            else
+            {
+                GUILayout.Label("🔇 Ready to speak", labelStyle);
+            }
+            GUILayout.EndVertical();
+            GUILayout.EndVertical();
+            #endregion
+
             #region Debug Tools
             GUILayout.BeginVertical(sectionStyle);
             GUILayout.Label("Debug Tools", headerStyle);
@@ -1061,6 +1121,61 @@ namespace WalkSimulator.Bot
             GUILayout.EndVertical();
             GUI.DragWindow();
         }
+
+        #region TTS Methods
+        private void EnsureTTSManagerExists()
+        {
+            if (WalkSimulator.Bot.TTS.SpeechToTextManager.instance == null)
+            {
+                GameObject ttsManagerObj = new GameObject("SpeechToTextManager");
+                ttsManagerObj.AddComponent<WalkSimulator.Bot.TTS.SpeechToTextManager>();
+                UnityEngine.Object.DontDestroyOnLoad(ttsManagerObj);
+            }
+        }
+        private async System.Threading.Tasks.Task SpeakTextAsync(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text) || isSpeaking) return;
+
+            try
+            {
+                isSpeaking = true;
+                
+                EnsureTTSManagerExists();
+                
+                var clip = await WalkSimulator.Bot.TTS.SpeechToTextManager.instance.TextToSpeech(text);
+                
+                if (clip != null)
+                {
+                    currentTTSClip = clip;
+                    WalkSimulator.Bot.TTS.SpeechToTextManager.instance.PlayTTSAudio(clip);                
+                    await System.Threading.Tasks.Task.Delay((int)(clip.length * 1000));
+                }
+                else
+                {
+                    AddLogMessage("TTS: Failed to generate audio clip");
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"TTS Error: {e.Message}");
+                AddLogMessage($"TTS Error: {e.Message}");
+            }
+            finally
+            {
+                isSpeaking = false;
+                currentTTSClip = null;
+            }
+        }
+        private void StopCurrentTTS() // works?
+        {
+            if (isSpeaking && GorillaTagger.Instance?.myRecorder != null)
+            {
+                GorillaTagger.Instance.myRecorder.StopRecording();
+                isSpeaking = false;
+                currentTTSClip = null;
+            }
+        }
+        #endregion
         #endregion
     }
 }
